@@ -77,6 +77,44 @@ describe("Yjs persistence", () => {
     expect(loaded.getText("content").toString()).toBe("before after");
   });
 
+  it("advances updated_at when metadata stays unchanged", async () => {
+    const note = await createNote(ownerId);
+    const doc = new Y.Doc();
+    const fragment = doc.getXmlFragment("prosemirror");
+    const first = new Y.XmlElement("paragraph");
+    first.insert(0, [new Y.XmlText("Stable title")]);
+    const second = new Y.XmlElement("paragraph");
+    second.insert(0, [new Y.XmlText("x".repeat(250))]);
+    fragment.insert(0, [first, second]);
+    await appendUpdate(note.id, Y.encodeStateAsUpdate(doc), doc);
+
+    const before = await query<{
+      title: string;
+      excerpt: string;
+      updated_epoch: number;
+    }>(
+      "SELECT title, excerpt, EXTRACT(EPOCH FROM updated_at)::double precision AS updated_epoch FROM notes WHERE id=$1",
+      [note.id],
+    );
+    const third = new Y.XmlElement("paragraph");
+    third.insert(0, [new Y.XmlText("Later content")]);
+    fragment.insert(2, [third]);
+    await query("SELECT pg_sleep(0.02)");
+    await appendUpdate(note.id, Y.encodeStateAsUpdate(doc), doc);
+
+    const after = await query<{
+      title: string;
+      excerpt: string;
+      updated_epoch: number;
+    }>(
+      "SELECT title, excerpt, EXTRACT(EPOCH FROM updated_at)::double precision AS updated_epoch FROM notes WHERE id=$1",
+      [note.id],
+    );
+    expect(after[0]?.title).toBe(before[0]?.title);
+    expect(after[0]?.excerpt).toBe(before[0]?.excerpt);
+    expect(after[0]?.updated_epoch).toBeGreaterThan(before[0]?.updated_epoch ?? 0);
+  });
+
   it("compacts update history without changing document content", async () => {
     const note = await createNote(ownerId);
     const doc = new Y.Doc();
