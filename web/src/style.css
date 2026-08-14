@@ -179,6 +179,14 @@ aside > input {
   background: #fff0f0;
   color: #922;
 }
+.app-error button {
+  margin-left: 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
 .empty {
   margin: auto;
   color: #777;

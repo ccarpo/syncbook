@@ -6,6 +6,7 @@ import { config } from "./config.js";
 const pool = new Pool({ connectionString: config.databaseUrl });
 export const USER_EVENT_CHANNEL = "syncbook_user_events";
 let userEventClient: Client | null = null;
+let userEventHandler: ((userId: string, type: string) => void) | null = null;
 export async function query<T extends Record<string, unknown>>(
   text: string,
   values: unknown[] = [],
@@ -38,16 +39,8 @@ export async function notifyUserEvent(userId: string, type: string): Promise<voi
 export async function subscribeUserEvents(
   handler: (userId: string, type: string) => void,
 ): Promise<void> {
+  userEventHandler = handler;
   if (userEventClient) {
-    userEventClient.on("notification", (message) => {
-      if (!message.payload) {
-        return;
-      }
-      const event = JSON.parse(message.payload) as { userId?: string; type?: string };
-      if (event.userId && event.type) {
-        handler(event.userId, event.type);
-      }
-    });
     return;
   }
   const client = new Client({ connectionString: config.databaseUrl });
@@ -58,8 +51,8 @@ export async function subscribeUserEvents(
       return;
     }
     const event = JSON.parse(message.payload) as { userId?: string; type?: string };
-    if (event.userId && event.type) {
-      handler(event.userId, event.type);
+    if (event.userId && event.type && userEventHandler) {
+      userEventHandler(event.userId, event.type);
     }
   });
   userEventClient = client;

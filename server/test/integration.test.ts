@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tokenFor } from "../src/auth.js";
 import { app, server } from "../src/index.js";
 import { migrate, query } from "../src/db.js";
-import { snapshot } from "../src/store.js";
+import { appendUpdate, snapshot } from "../src/store.js";
 import { waitForUserEvents } from "../src/ws.js";
 
 let ownerToken = "";
@@ -117,7 +117,7 @@ describe("WebSocket upgrade authentication", () => {
 });
 
 describe("user notification channel", () => {
-  it("notifies a user's channel when notes are created and deleted", async () => {
+  it("notifies metadata, create, and delete changes without duplicate handlers", async () => {
     const socket = new WebSocket(
       `ws://localhost:${serverPort}/ws/user?token=${encodeURIComponent(ownerToken)}`,
     );
@@ -137,6 +137,29 @@ describe("user notification channel", () => {
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(201);
     await expect(createdEvent).resolves.toEqual({ type: "notes-changed" });
+
+    const metadataDoc = new Y.Doc();
+    setEditorText(metadataDoc, "metadata title");
+    const metadataEvent = nextEvent();
+    await appendUpdate(
+      created.body.id as string,
+      Y.encodeStateAsUpdate(metadataDoc),
+      metadataDoc,
+    );
+    await expect(metadataEvent).resolves.toEqual({ type: "notes-changed" });
+
+    const unchangedEvent = nextEvent();
+    await appendUpdate(
+      created.body.id as string,
+      Y.encodeStateAsUpdate(metadataDoc),
+      metadataDoc,
+    );
+    await expect(
+      Promise.race([
+        unchangedEvent.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 200)),
+      ]),
+    ).resolves.toBe(false);
 
     const deletedEvent = nextEvent();
     await request(app)

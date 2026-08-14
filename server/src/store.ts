@@ -49,7 +49,11 @@ export async function appendUpdate(
       Buffer.from(update),
     ]);
     const result = await client.query<{ owner_id: string }>(
-      "UPDATE notes SET title=$2, excerpt=$3, updated_at=now() WHERE id=$1",
+      `UPDATE notes
+       SET title=$2, excerpt=$3, updated_at=now()
+       WHERE id=$1
+         AND (title IS DISTINCT FROM $2 OR excerpt IS DISTINCT FROM $3)
+       RETURNING owner_id`,
       [noteId, noteMetadata.title, noteMetadata.excerpt],
     );
     return result.rows[0]?.owner_id;

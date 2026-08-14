@@ -30,5 +30,6 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     window.dispatchEvent(new CustomEvent("syncbook-api-error", { detail: message }));
     throw new Error(message);
   }
+  window.dispatchEvent(new Event("syncbook-api-success"));
   return response.status === 204 ? (undefined as T) : response.json();
 }

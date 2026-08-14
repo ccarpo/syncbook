@@ -31,6 +31,9 @@ export function App(): ReactElement {
     const showError = (event: Event): void => {
       setError((event as CustomEvent<string>).detail || "Request failed");
     };
+    const clearError = (): void => {
+      setError("");
+    };
     const expireSession = (): void => {
       localStorage.removeItem("token");
       setLoggedIn(false);
@@ -43,10 +46,12 @@ export function App(): ReactElement {
       }
     };
     window.addEventListener("syncbook-api-error", showError);
+    window.addEventListener("syncbook-api-success", clearError);
     window.addEventListener("syncbook-session-expired", expireSession);
     window.addEventListener("storage", handleStorage);
     return () => {
       window.removeEventListener("syncbook-api-error", showError);
+      window.removeEventListener("syncbook-api-success", clearError);
       window.removeEventListener("syncbook-session-expired", expireSession);
       window.removeEventListener("storage", handleStorage);
     };
@@ -128,6 +133,9 @@ export function App(): ReactElement {
       {error && (
         <div className="app-error" role="alert">
           {error}
+          <button type="button" onClick={() => setError("")}>
+            Dismiss
+          </button>
         </div>
       )}
       <NoteList
