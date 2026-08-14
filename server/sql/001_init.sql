@@ -17,3 +17,4 @@ CREATE TABLE IF NOT EXISTS note_snapshots (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), note_id uuid NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now(), state bytea NOT NULL, excerpt text NOT NULL DEFAULT ''
 );
+ALTER TABLE note_snapshots ADD COLUMN IF NOT EXISTS up_to_seq bigint;

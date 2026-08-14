@@ -1,50 +1,200 @@
-import type { Server } from "node:http";
-import { WebSocketServer, WebSocket } from "ws";
+import type { IncomingMessage, Server } from "node:http";
+import { WebSocket, WebSocketServer } from "ws";
 import * as Y from "yjs";
-import * as sync from "y-protocols/sync";
-import * as awareness from "y-protocols/awareness";
-import * as encoding from "lib0/encoding";
+import * as awarenessProtocol from "y-protocols/awareness";
+import * as syncProtocol from "y-protocols/sync";
 import * as decoding from "lib0/decoding";
+import * as encoding from "lib0/encoding";
 import { userIdFromToken } from "./auth.js";
-import { ownedNote, loadDoc, appendUpdate, snapshot } from "./store.js";
-const SYNC = 0, AWARENESS = 1;
-type Peer = { ws: WebSocket; doc: Y.Doc; awareness: awareness.Awareness; noteId: string };
-export function attachWs(server: Server): void {
-  const wss = new WebSocketServer({ noServer: true }); const peers = new Set<Peer>();
-  server.on("upgrade", async (req, socket, head) => {
-    const url = new URL(req.url ?? "/", "http://localhost"), noteId = url.searchParams.get("noteId") ?? url.pathname.replace(/^\/ws\//, ""), uid = userIdFromToken(url.searchParams.get("token") ?? undefined);
-    if (!noteId || !uid || !(await ownedNote(noteId, uid))) { socket.write("HTTP/1.1 401 Unauthorized\\r\\n\\r\\n"); socket.destroy(); return; }
+import { appendUpdate, compactIfNeeded, loadDoc, ownedNote, snapshot } from "./store.js";
+
+const SYNC = 0;
+const AWARENESS = 1;
+const UPDATE = 2;
+
+type Room = {
+  noteId: string;
+  doc: Y.Doc;
+  awareness: awarenessProtocol.Awareness;
+  peers: Set<WebSocket>;
+  snapshotTimer?: ReturnType<typeof setTimeout>;
+  lastSnapshot: number;
+};
+
+const rooms = new Map<string, Room>();
+
+async function getRoom(noteId: string): Promise<Room> {
+  const existing = rooms.get(noteId);
+  if (existing) {
+    return existing;
+  }
+  const doc = await loadDoc(noteId);
+  const room: Room = {
+    noteId,
+    doc,
+    awareness: new awarenessProtocol.Awareness(doc),
+    peers: new Set(),
+    lastSnapshot: 0,
+  };
+  rooms.set(noteId, room);
+  return room;
+}
+
+function scheduleSnapshot(room: Room): void {
+  if (room.snapshotTimer) {
+    clearTimeout(room.snapshotTimer);
+  }
+  room.snapshotTimer = setTimeout(() => {
+    if (Date.now() - room.lastSnapshot >= 10_000) {
+      void snapshot(room.noteId, room.doc);
+      room.lastSnapshot = Date.now();
+    }
+  }, 3_000);
+}
+
+function updateMessage(update: Uint8Array): Uint8Array {
+  const encoder = encoding.createEncoder();
+  encoding.writeVarUint(encoder, SYNC);
+  encoding.writeVarUint(encoder, UPDATE);
+  encoding.writeVarUint8Array(encoder, update);
+  return encoding.toUint8Array(encoder);
+}
+
+function broadcast(room: Room, message: Uint8Array, except?: WebSocket): void {
+  for (const peer of room.peers) {
+    if (peer !== except && peer.readyState === WebSocket.OPEN) {
+      peer.send(message);
+    }
+  }
+}
+
+export async function applyAndBroadcast(
+  noteId: string,
+  update: Uint8Array,
+): Promise<void> {
+  const room = rooms.get(noteId);
+  if (!room) {
     const doc = await loadDoc(noteId);
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, noteId, doc));
-  });
-  wss.on("connection", (ws: WebSocket, noteId: string, doc: Y.Doc) => {
-    const peer: Peer = { ws, doc, awareness: new awareness.Awareness(doc), noteId }; peers.add(peer);
-    const sendSync = (): void => { const enc = encoding.createEncoder(); encoding.writeVarUint(enc, SYNC); sync.writeSyncStep1(enc, doc); ws.send(encoding.toUint8Array(enc)); };
-    sendSync();
-    let snapshotTimer: ReturnType<typeof setTimeout> | undefined;
-    let lastSnapshot = 0;
-    const scheduleSnapshot = (): void => {
-      if (snapshotTimer) clearTimeout(snapshotTimer);
-      snapshotTimer = setTimeout(() => {
-        if (Date.now() - lastSnapshot >= 10_000) {
-          void snapshot(noteId); lastSnapshot = Date.now();
-        }
-      }, 3_000);
-    };
-    ws.on("message", async (data: Buffer) => {
-      const dec = decoding.createDecoder(new Uint8Array(data)), type = decoding.readVarUint(dec);
-      if (type === SYNC) {
-        const inspect = decoding.createDecoder(new Uint8Array(data)); decoding.readVarUint(inspect);
-        const syncType = decoding.readVarUint(inspect);
-        if (syncType === 2) {
-          const update = decoding.readVarUint8Array(inspect);
-          void appendUpdate(noteId, update).then(scheduleSnapshot).catch((error: unknown) => console.error("Failed to persist update", error));
-        }
-        const enc = encoding.createEncoder(); encoding.writeVarUint(enc, SYNC); sync.readSyncMessage(dec, enc, doc, null); if (encoding.length(enc) > 1) ws.send(encoding.toUint8Array(enc)); broadcast(peer, data);
-      }
-      else if (type === AWARENESS) { awareness.applyAwarenessUpdate(peer.awareness, decoding.readVarUint8Array(dec), ws); broadcast(peer, data); }
+    Y.applyUpdate(doc, update, "server");
+    await appendUpdate(noteId, update, doc);
+    return;
+  }
+  Y.applyUpdate(room.doc, update, "server");
+  await appendUpdate(noteId, update, room.doc);
+  broadcast(room, updateMessage(update));
+  scheduleSnapshot(room);
+}
+
+export async function restoreAndBroadcast(
+  noteId: string,
+  snapshotUpdate: Uint8Array,
+): Promise<void> {
+  const room = await getRoom(noteId);
+  const restored = new Y.Doc();
+  Y.applyUpdate(restored, snapshotUpdate);
+  const before = Y.encodeStateVector(room.doc);
+  const currentXml = room.doc.getXmlFragment("prosemirror");
+  const restoredXml = restored.getXmlFragment("prosemirror");
+  const children = restoredXml
+    .toArray()
+    .filter(
+      (child): child is Y.XmlElement | Y.XmlText =>
+        child instanceof Y.XmlElement || child instanceof Y.XmlText,
+    )
+    .map((child) => child.clone());
+
+  room.doc.transact(() => {
+    currentXml.delete(0, currentXml.length);
+    currentXml.insert(0, children);
+  }, "restore");
+
+  const update = Y.encodeStateAsUpdate(room.doc, before);
+  if (update.byteLength === 0) {
+    return;
+  }
+  await appendUpdate(noteId, update, room.doc);
+  broadcast(room, updateMessage(update));
+  scheduleSnapshot(room);
+}
+
+function rejectUpgrade(socket: NodeJS.WritableStream & { destroy(): void }): void {
+  socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+  socket.destroy();
+}
+
+export function attachWs(server: Server): void {
+  const wss = new WebSocketServer({ noServer: true });
+  server.on("upgrade", async (request: IncomingMessage, socket, head) => {
+    const url = new URL(request.url ?? "/", "http://localhost");
+    const noteId = url.searchParams.get("noteId") ?? url.pathname.replace(/^\/ws\//, "");
+    const userId = userIdFromToken(url.searchParams.get("token") ?? undefined);
+    if (!noteId || !userId || !(await ownedNote(noteId, userId))) {
+      rejectUpgrade(socket);
+      return;
+    }
+    const room = await getRoom(noteId);
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit("connection", ws, room);
     });
-    ws.on("close", () => { if (snapshotTimer) clearTimeout(snapshotTimer); peers.delete(peer); awareness.removeAwarenessStates(peer.awareness, [peer.awareness.clientID], null); });
-    function broadcast(source: Peer, message: Buffer): void { for (const p of peers) if (p !== source && p.noteId === source.noteId && p.ws.readyState === WebSocket.OPEN) p.ws.send(message); }
+  });
+
+  wss.on("connection", (ws: WebSocket, room: Room) => {
+    room.peers.add(ws);
+    const encoder = encoding.createEncoder();
+    encoding.writeVarUint(encoder, SYNC);
+    syncProtocol.writeSyncStep1(encoder, room.doc);
+    ws.send(encoding.toUint8Array(encoder));
+
+    ws.on("message", async (data: Buffer) => {
+      const bytes = new Uint8Array(data);
+      const decoder = decoding.createDecoder(bytes);
+      const type = decoding.readVarUint(decoder);
+      if (type === SYNC) {
+        const inspect = decoding.createDecoder(bytes);
+        decoding.readVarUint(inspect);
+        const syncType = decoding.readVarUint(inspect);
+        const response = encoding.createEncoder();
+        encoding.writeVarUint(response, SYNC);
+        syncProtocol.readSyncMessage(decoder, response, room.doc, null);
+        if (encoding.length(response) > 1) {
+          ws.send(encoding.toUint8Array(response));
+        }
+        if (syncType === UPDATE) {
+          const update = decoding.readVarUint8Array(inspect);
+          try {
+            await appendUpdate(room.noteId, update, room.doc);
+            await compactIfNeeded(room.noteId, room.doc);
+            scheduleSnapshot(room);
+          } catch (error) {
+            console.error("Failed to persist update", error);
+          }
+          broadcast(room, updateMessage(update), ws);
+        }
+      } else if (type === AWARENESS) {
+        const update = decoding.readVarUint8Array(decoder);
+        awarenessProtocol.applyAwarenessUpdate(room.awareness, update, ws);
+        const encoder = encoding.createEncoder();
+        encoding.writeVarUint(encoder, AWARENESS);
+        encoding.writeVarUint8Array(encoder, update);
+        broadcast(room, encoding.toUint8Array(encoder), ws);
+      }
+    });
+
+    ws.on("close", () => {
+      room.peers.delete(ws);
+      awarenessProtocol.removeAwarenessStates(
+        room.awareness,
+        [room.awareness.clientID],
+        null,
+      );
+      if (room.peers.size === 0) {
+        void snapshot(room.noteId, room.doc).finally(() => {
+          if (room.snapshotTimer) {
+            clearTimeout(room.snapshotTimer);
+          }
+          rooms.delete(room.noteId);
+        });
+      }
+    });
   });
 }

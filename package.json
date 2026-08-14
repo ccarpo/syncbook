@@ -1,12 +1,22 @@
 {
   "name": "syncbook",
   "private": true,
-  "workspaces": ["server", "web"],
+  "workspaces": [
+    "server",
+    "web"
+  ],
   "scripts": {
     "lint": "npm run lint --workspace server && npm run lint --workspace web",
     "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace web",
     "build": "npm run build --workspace server && npm run build --workspace web",
-    "test": "npm run test --workspace server"
+    "test": "npm run test --workspace server",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.3"
+  }
 }
