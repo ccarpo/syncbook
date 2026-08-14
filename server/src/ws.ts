@@ -6,6 +6,7 @@ import * as syncProtocol from "y-protocols/sync";
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
 import { userIdFromToken } from "./auth.js";
+import { subscribeUserEvents } from "./db.js";
 import {
   appendUpdate,
   compactIfNeeded,
@@ -30,6 +31,7 @@ type Room = {
 };
 
 const rooms = new Map<string, Room>();
+let userEventsReady: Promise<void> = Promise.resolve();
 
 async function getRoom(noteId: string): Promise<Room> {
   const existing = rooms.get(noteId);
@@ -157,10 +159,39 @@ function rejectUpgrade(socket: NodeJS.WritableStream & { destroy(): void }): voi
 
 export function attachWs(server: Server): void {
   const wss = new WebSocketServer({ noServer: true });
+  const userPeers = new Map<string, Set<WebSocket>>();
+  userEventsReady = subscribeUserEvents((userId, type) => {
+    const message = JSON.stringify({ type });
+    for (const peer of userPeers.get(userId) ?? []) {
+      if (peer.readyState === WebSocket.OPEN) {
+        peer.send(message);
+      }
+    }
+  }).catch((error: unknown) => {
+    console.error("Failed to subscribe to user events", error);
+  });
   server.on("upgrade", async (request: IncomingMessage, socket, head) => {
     const url = new URL(request.url ?? "/", "http://localhost");
-    const noteId = url.searchParams.get("noteId") ?? url.pathname.replace(/^\/ws\//, "");
     const userId = userIdFromToken(url.searchParams.get("token") ?? undefined);
+    if (url.pathname === "/ws/user") {
+      if (!userId) {
+        rejectUpgrade(socket);
+        return;
+      }
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        const peers = userPeers.get(userId) ?? new Set<WebSocket>();
+        peers.add(ws);
+        userPeers.set(userId, peers);
+        ws.on("close", () => {
+          peers.delete(ws);
+          if (peers.size === 0) {
+            userPeers.delete(userId);
+          }
+        });
+      });
+      return;
+    }
+    const noteId = url.searchParams.get("noteId") ?? url.pathname.replace(/^\/ws\//, "");
     if (!noteId || !userId || !(await ownedNote(noteId, userId))) {
       rejectUpgrade(socket);
       return;
@@ -267,4 +298,8 @@ export function attachWs(server: Server): void {
       }
     });
   });
+}
+
+export async function waitForUserEvents(): Promise<void> {
+  await userEventsReady;
 }

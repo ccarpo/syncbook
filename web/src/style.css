@@ -118,6 +118,20 @@ aside > input {
   list-style: none;
   padding: 0;
 }
+.editor ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.editor ul[data-type="taskList"] li > label {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-top: 4px;
+}
+.editor ul[data-type="taskList"] li > div {
+  flex: 1;
+}
 .history-editor {
   min-height: 20vh;
   padding: 16px;
@@ -152,6 +166,18 @@ aside > input {
 }
 .error {
   color: #b33;
+}
+.app-error {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  max-width: 360px;
+  padding: 10px 14px;
+  border: 1px solid #d99;
+  border-radius: 6px;
+  background: #fff0f0;
+  color: #922;
 }
 .empty {
   margin: auto;

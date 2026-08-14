@@ -9,6 +9,7 @@ import { tokenFor } from "../src/auth.js";
 import { app, server } from "../src/index.js";
 import { migrate, query } from "../src/db.js";
 import { snapshot } from "../src/store.js";
+import { waitForUserEvents } from "../src/ws.js";
 
 let ownerToken = "";
 let otherToken = "";
@@ -64,6 +65,7 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 
 beforeAll(async () => {
   await migrate();
+  await waitForUserEvents();
   const owner = await createUser(`owner-${randomUUID()}@example.com`);
   const other = await createUser(`other-${randomUUID()}@example.com`);
   ownerToken = owner.token;
@@ -111,6 +113,38 @@ describe("WebSocket upgrade authentication", () => {
     await expect(
       websocketStatus(`${base}?token=${encodeURIComponent(otherToken)}`),
     ).resolves.toBe(401);
+  });
+});
+
+describe("user notification channel", () => {
+  it("notifies a user's channel when notes are created and deleted", async () => {
+    const socket = new WebSocket(
+      `ws://localhost:${serverPort}/ws/user?token=${encodeURIComponent(ownerToken)}`,
+    );
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", () => resolve());
+      socket.once("error", reject);
+    });
+    const nextEvent = (): Promise<{ type: string }> =>
+      new Promise((resolve, reject) => {
+        socket.once("message", (data) => resolve(JSON.parse(data.toString())));
+        socket.once("error", reject);
+      });
+
+    const createdEvent = nextEvent();
+    const created = await request(app)
+      .post("/api/notes")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(201);
+    await expect(createdEvent).resolves.toEqual({ type: "notes-changed" });
+
+    const deletedEvent = nextEvent();
+    await request(app)
+      .delete(`/api/notes/${created.body.id as string}`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(204);
+    await expect(deletedEvent).resolves.toEqual({ type: "notes-changed" });
+    socket.close();
   });
 });
 

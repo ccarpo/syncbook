@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { api } from "./api";
 import { Editor } from "./Editor";
 import { Login } from "./Login";
@@ -10,31 +10,112 @@ export function App(): ReactElement {
   const [selected, setSelected] = useState<Note | null>(null);
   const [search, setSearch] = useState("");
   const [trash, setTrash] = useState(false);
+  const [error, setError] = useState("");
+  const userSocket = useRef<WebSocket | null>(null);
+  const notificationTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   async function load(showTrash = trash): Promise<void> {
-    const list = await api<Note[]>(showTrash ? "/notes?trash=true" : "/notes");
-    setNotes(list);
-    setSelected((current) => current ?? list[0] ?? null);
+    try {
+      const list = await api<Note[]>(showTrash ? "/notes?trash=true" : "/notes");
+      setNotes(list);
+      setSelected(
+        (current) => list.find((note) => note.id === current?.id) ?? list[0] ?? null,
+      );
+    } catch {
+      return;
+    }
   }
   useEffect(() => {
     if (loggedIn) void load();
   }, [loggedIn, trash]);
+  useEffect(() => {
+    const showError = (event: Event): void => {
+      setError((event as CustomEvent<string>).detail || "Request failed");
+    };
+    const expireSession = (): void => {
+      localStorage.removeItem("token");
+      setLoggedIn(false);
+      setNotes([]);
+      setSelected(null);
+    };
+    const handleStorage = (event: StorageEvent): void => {
+      if (event.key === "token" && !event.newValue) {
+        expireSession();
+      }
+    };
+    window.addEventListener("syncbook-api-error", showError);
+    window.addEventListener("syncbook-session-expired", expireSession);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("syncbook-api-error", showError);
+      window.removeEventListener("syncbook-session-expired", expireSession);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+  useEffect(() => {
+    if (!loggedIn) {
+      userSocket.current?.close();
+      userSocket.current = null;
+      return;
+    }
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setLoggedIn(false);
+      return;
+    }
+    const socket = new WebSocket(
+      `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/user?token=${encodeURIComponent(token)}`,
+    );
+    userSocket.current = socket;
+    socket.onmessage = () => {
+      if (notificationTimer.current) {
+        clearTimeout(notificationTimer.current);
+      }
+      notificationTimer.current = setTimeout(() => {
+        void load();
+      }, 250);
+    };
+    socket.onerror = () => {
+      setError("Live note updates are unavailable");
+    };
+    return () => {
+      socket.close();
+      if (notificationTimer.current) {
+        clearTimeout(notificationTimer.current);
+      }
+      if (userSocket.current === socket) {
+        userSocket.current = null;
+      }
+    };
+  }, [loggedIn]);
   if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
   async function create(): Promise<void> {
-    const note = await api<Note>("/notes", { method: "POST" });
-    setNotes((current) => [note, ...current]);
-    setSelected(note);
+    try {
+      const note = await api<Note>("/notes", { method: "POST" });
+      setNotes((current) => [note, ...current]);
+      setSelected(note);
+    } catch {
+      return;
+    }
   }
   async function deleteSelected(): Promise<void> {
     if (!selected || !window.confirm("Delete this note?")) {
       return;
     }
-    await api(`/notes/${selected.id}`, { method: "DELETE" });
-    setSelected(null);
-    await load();
+    try {
+      await api(`/notes/${selected.id}`, { method: "DELETE" });
+      setSelected(null);
+      await load();
+    } catch {
+      return;
+    }
   }
   async function restore(note: Note): Promise<void> {
-    await api(`/notes/${note.id}/restore`, { method: "POST" });
-    await load();
+    try {
+      await api(`/notes/${note.id}/restore`, { method: "POST" });
+      await load();
+    } catch {
+      return;
+    }
   }
   function logout(): void {
     localStorage.removeItem("token");
@@ -44,6 +125,11 @@ export function App(): ReactElement {
   }
   return (
     <main className="app">
+      {error && (
+        <div className="app-error" role="alert">
+          {error}
+        </div>
+      )}
       <NoteList
         notes={notes}
         selected={selected}

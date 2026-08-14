@@ -17,7 +17,19 @@ export function HistoryPanel({
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [preview, setPreview] = useState<Snapshot | null>(null);
   useEffect(() => {
-    void api<Snapshot[]>(`/notes/${note.id}/history`).then(setSnapshots);
+    let active = true;
+    const load = async (): Promise<void> => {
+      const next = await api<Snapshot[]>(`/notes/${note.id}/history`);
+      if (active) {
+        setSnapshots(next);
+      }
+    };
+    void load();
+    const timer = setInterval(() => void load(), 3000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, [note.id]);
   async function open(snapshot: Snapshot): Promise<void> {
     setPreview(await api<Snapshot>(`/notes/${note.id}/history/${snapshot.id}`));
@@ -25,6 +37,8 @@ export function HistoryPanel({
   async function restore(): Promise<void> {
     if (preview) {
       await api(`/notes/${note.id}/history/${preview.id}/restore`, { method: "POST" });
+      const next = await api<Snapshot[]>(`/notes/${note.id}/history`);
+      setSnapshots(next);
       onRestore();
     }
   }

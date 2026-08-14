@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { query, tx } from "./db.js";
+import { notifyUserEvent, query, tx } from "./db.js";
 import { applyUpdates, metadata } from "./doc.js";
 
 export const COMPACTION_THRESHOLD = 300;
@@ -43,16 +43,22 @@ export async function appendUpdate(
   doc: Y.Doc,
 ): Promise<void> {
   const noteMetadata = metadata(doc);
-  await tx(async (client) => {
+  const ownerId = await tx(async (client) => {
     await client.query('INSERT INTO note_updates(note_id, "update") VALUES($1,$2)', [
       noteId,
       Buffer.from(update),
     ]);
-    await client.query(
+    const result = await client.query<{ owner_id: string }>(
       "UPDATE notes SET title=$2, excerpt=$3, updated_at=now() WHERE id=$1",
       [noteId, noteMetadata.title, noteMetadata.excerpt],
     );
+    return result.rows[0]?.owner_id;
   });
+  if (ownerId) {
+    await notifyUserEvent(ownerId, "notes-changed").catch((error: unknown) => {
+      console.error("Failed to publish note event", error);
+    });
+  }
 }
 
 export async function snapshot(noteId: string, doc?: Y.Doc): Promise<void> {

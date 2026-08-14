@@ -3,7 +3,7 @@ import http from "node:http";
 import { z } from "zod";
 import { checkPassword, hashPassword, tokenFor, userIdFromToken } from "./auth.js";
 import { config } from "./config.js";
-import { migrate, query } from "./db.js";
+import { migrate, notifyUserEvent, query } from "./db.js";
 import { createNote, ownedNote } from "./store.js";
 import { attachWs, restoreAndBroadcast } from "./ws.js";
 
@@ -98,7 +98,11 @@ app.post("/api/notes", async (request, response) => {
   if (!userId) {
     return unauthorized(response);
   }
-  return response.status(201).json(await createNote(userId));
+  const note = await createNote(userId);
+  void notifyUserEvent(userId, "notes-changed").catch((error: unknown) => {
+    console.error("Failed to publish note event", error);
+  });
+  return response.status(201).json(note);
 });
 
 app.delete("/api/notes/:id", async (request, response) => {
@@ -110,9 +114,13 @@ app.delete("/api/notes/:id", async (request, response) => {
     "UPDATE notes SET deleted_at=now() WHERE id=$1 AND owner_id=$2 RETURNING id",
     [request.params.id, userId],
   );
-  return rows.length
-    ? response.status(204).send()
-    : response.status(404).json({ error: "Note not found" });
+  if (!rows.length) {
+    return response.status(404).json({ error: "Note not found" });
+  }
+  void notifyUserEvent(userId, "notes-changed").catch((error: unknown) => {
+    console.error("Failed to publish note event", error);
+  });
+  return response.status(204).send();
 });
 
 app.post("/api/notes/:id/restore", async (request, response) => {
@@ -124,9 +132,13 @@ app.post("/api/notes/:id/restore", async (request, response) => {
     "UPDATE notes SET deleted_at=NULL WHERE id=$1 AND owner_id=$2 RETURNING id",
     [request.params.id, userId],
   );
-  return rows.length
-    ? response.status(204).send()
-    : response.status(404).json({ error: "Note not found" });
+  if (!rows.length) {
+    return response.status(404).json({ error: "Note not found" });
+  }
+  void notifyUserEvent(userId, "notes-changed").catch((error: unknown) => {
+    console.error("Failed to publish note event", error);
+  });
+  return response.status(204).send();
 });
 
 app.get("/api/notes/:id/history", async (request, response) => {

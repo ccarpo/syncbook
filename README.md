@@ -96,6 +96,24 @@ Sync step 1 carries the sender's state vector. Sync step 2 carries a state updat
 
 The document's ProseMirror XML fragment is named `prosemirror`. TipTap uses this exact field name, and a non-JS client should use the same Yjs root fragment for editor content. The server persists updates, periodically writes snapshots with a sequence watermark, and compacts old updates after the log exceeds the threshold.
 
+### User notification channel
+
+Clients can also open an authenticated text WebSocket at
+`/ws/user?token=<jwt>`. The token is checked during the HTTP upgrade, with the
+same `401 Unauthorized` response used by note rooms. This channel is scoped to
+the authenticated user rather than a note. The server sends JSON text messages
+when the user's note list or note metadata changes:
+
+```json
+{ "type": "notes-changed" }
+```
+
+Clients should refetch `GET /api/notes` (or `GET /api/notes?trash=true`) after
+receiving this message. These notifications are delivered through PostgreSQL
+`LISTEN/NOTIFY`, so multiple server processes can forward events to their
+locally connected clients without requiring all of a user's sockets to share
+one process.
+
 ## Development
 
 ```sh
