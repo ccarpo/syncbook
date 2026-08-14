@@ -1,4 +1,10 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { EditorContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import TaskList from "@tiptap/extension-task-list";
+import TaskItem from "@tiptap/extension-task-item";
+import Collaboration from "@tiptap/extension-collaboration";
+import * as Y from "yjs";
 import { api } from "./api";
 import type { Note, Snapshot } from "./types";
 export function HistoryPanel({
@@ -22,6 +28,30 @@ export function HistoryPanel({
       onRestore();
     }
   }
+  const previewDoc = useMemo(() => {
+    const doc = new Y.Doc();
+    if (preview?.state) {
+      const bytes = Uint8Array.from(atob(preview.state), (char) => char.charCodeAt(0));
+      Y.applyUpdate(doc, bytes);
+    }
+    return doc;
+  }, [preview]);
+  const previewEditor = useEditor(
+    {
+      editable: false,
+      extensions: [
+        StarterKit.configure({ history: false }),
+        TaskList,
+        TaskItem.configure({ nested: true }),
+        Collaboration.configure({
+          document: previewDoc,
+          field: "prosemirror",
+        }),
+      ],
+      editorProps: { attributes: { class: "editor history-editor" } },
+    },
+    [previewDoc],
+  );
   return (
     <section className="history">
       <h2>History</h2>
@@ -33,7 +63,11 @@ export function HistoryPanel({
       ))}
       {preview && (
         <div className="history-preview">
-          <p>{preview.excerpt || "Empty note"}</p>
+          {previewEditor ? (
+            <EditorContent editor={previewEditor} />
+          ) : (
+            <p>{preview.excerpt || "Empty note"}</p>
+          )}
           <button onClick={() => void restore()}>Restore this version</button>
         </div>
       )}

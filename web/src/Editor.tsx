@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import TaskList from "@tiptap/extension-task-list";
@@ -20,6 +20,8 @@ export function Editor({
 }): ReactElement {
   const [status, setStatus] = useState("connecting");
   const [showHistory, setShowHistory] = useState(false);
+  const onChangedRef = useRef(onChanged);
+  onChangedRef.current = onChanged;
   const ydoc = useMemo(() => new Y.Doc(), [note.id]);
   const persistence = useMemo(
     () => new IndexeddbPersistence(`note-${note.id}`, ydoc),
@@ -31,7 +33,7 @@ export function Editor({
         `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`,
         note.id,
         ydoc,
-        { params: { token } },
+        { disableBc: true, params: { token } },
       ),
     [note.id, token, ydoc],
   );
@@ -45,23 +47,36 @@ export function Editor({
     editorProps: { attributes: { class: "editor" } },
   });
   useEffect(() => {
-    provider.on("status", ({ status: connection }: { status: string }) =>
-      setStatus(connection === "connected" ? "saving" : "offline"),
-    );
-    const observer = (): void => onChanged();
+    const handleStatus = ({ status: connection }: { status: string }): void =>
+      setStatus(connection === "connected" ? "saving" : "offline");
+    provider.on("status", handleStatus);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const observer = (): void => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      timer = setTimeout(() => onChangedRef.current(), 250);
+    };
     ydoc.on("update", observer);
     return () => {
+      provider.off("status", handleStatus);
       ydoc.off("update", observer);
+      if (timer) {
+        clearTimeout(timer);
+      }
       persistence.destroy();
       provider.destroy();
       editor?.destroy();
     };
-  }, [editor, onChanged, persistence, provider, ydoc]);
+  }, [editor, persistence, provider, ydoc]);
   return (
     <section className="editor-pane">
       <div className="editor-header">
         <strong>{note.title || "Untitled note"}</strong>
         <span>{status}</span>
+        <button onClick={() => editor?.chain().focus().toggleTaskList().run()}>
+          Checklist
+        </button>
         <button onClick={() => setShowHistory(!showHistory)}>History</button>
       </div>
       <EditorContent editor={editor} />

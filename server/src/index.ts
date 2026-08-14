@@ -179,6 +179,10 @@ app.use((_request, response) => {
 const server = http.createServer(app);
 attachWs(server);
 await migrate();
-server.listen(config.port, () => {
-  console.log(`Syncbook server listening on ${config.port}`);
-});
+if (!process.env.VITEST) {
+  server.listen(config.port, () => {
+    console.log(`Syncbook server listening on ${config.port}`);
+  });
+}
+
+export { app, server };

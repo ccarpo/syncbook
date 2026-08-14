@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { migrate, pool, query } from "../src/db.js";
 import {
   appendUpdate,
+  COMPACTION_THRESHOLD,
   compactIfNeeded,
   createNote,
   loadDoc,
@@ -19,10 +20,6 @@ beforeAll(async () => {
     [`test-${randomUUID()}@example.com`, "test-hash"],
   );
   ownerId = rows[0].id;
-});
-
-afterAll(async () => {
-  await pool.end();
 });
 
 describe("Yjs persistence", () => {
@@ -43,6 +40,29 @@ describe("Yjs persistence", () => {
     expect(Y.encodeStateAsUpdate(await loadDoc(note.id)).byteLength).toBeGreaterThan(0);
   });
 
+  it("preserves block boundaries for titles, excerpts, and checklists", async () => {
+    const note = await createNote(ownerId);
+    const doc = new Y.Doc();
+    const fragment = doc.getXmlFragment("prosemirror");
+    const first = new Y.XmlElement("paragraph");
+    first.insert(0, [new Y.XmlText("First block")]);
+    const second = new Y.XmlElement("paragraph");
+    second.insert(0, [new Y.XmlText("Second block")]);
+    const checklist = new Y.XmlElement("taskItem");
+    checklist.insert(0, [new Y.XmlText("Check this")]);
+    fragment.insert(0, [first, second, checklist]);
+    await appendUpdate(note.id, Y.encodeStateAsUpdate(doc), doc);
+
+    const rows = await query<{ title: string; excerpt: string }>(
+      "SELECT title, excerpt FROM notes WHERE id=$1",
+      [note.id],
+    );
+    expect(rows[0]).toEqual({
+      title: "First block",
+      excerpt: "First block\nSecond block\nCheck this",
+    });
+  });
+
   it("records a sequence watermark and reloads from it", async () => {
     const note = await createNote(ownerId);
     const doc = new Y.Doc();
@@ -61,12 +81,12 @@ describe("Yjs persistence", () => {
     const note = await createNote(ownerId);
     const doc = new Y.Doc();
     const text = doc.getText("content");
-    for (let index = 0; index < 300; index += 1) {
+    for (let index = 0; index < COMPACTION_THRESHOLD; index += 1) {
       const before = Y.encodeStateVector(doc);
       text.insert(index, "x");
       await appendUpdate(note.id, Y.encodeStateAsUpdate(doc, before), doc);
     }
-    await compactIfNeeded(note.id, doc);
+    await compactIfNeeded(note.id, doc, COMPACTION_THRESHOLD);
     const rows = await query<{ count: string }>(
       "SELECT count(*) FROM note_updates WHERE note_id=$1",
       [note.id],

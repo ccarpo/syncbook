@@ -14,27 +14,30 @@
   },
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",
-    "@types/pg": "^8.11.11",
     "@types/express": "^5.0.1",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.13.10",
+    "@types/pg": "^8.11.11",
     "@types/ws": "^8.5.14",
     "bcryptjs": "^3.0.2",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
     "lib0": "^0.2.101",
     "pg": "^8.13.3",
+    "ws": "^8.18.0",
     "y-protocols": "^1.0.6",
     "yjs": "^13.6.27",
-    "zod": "^3.24.2",
-    "ws": "^8.18.0"
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
+    "@types/supertest": "^7.2.1",
     "eslint": "^9.22.0",
-    "typescript-eslint": "^8.26.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2",
-    "vitest": "^3.0.8"
+    "typescript-eslint": "^8.26.0",
+    "vitest": "^3.0.8",
+    "y-websocket": "^3.1.0"
   }
 }

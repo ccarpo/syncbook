@@ -2,6 +2,8 @@ import * as Y from "yjs";
 import { query, tx } from "./db.js";
 import { applyUpdates, metadata } from "./doc.js";
 
+export const COMPACTION_THRESHOLD = 300;
+
 export type NoteRow = {
   id: string;
   title: string;
@@ -73,19 +75,20 @@ export async function snapshot(noteId: string, doc?: Y.Doc): Promise<void> {
   });
 }
 
-export async function compactIfNeeded(noteId: string, doc: Y.Doc): Promise<void> {
-  const rows = await query<{ count: string }>(
-    "SELECT count(*) FROM note_updates WHERE note_id=$1",
-    [noteId],
-  );
-  if (Number(rows[0]?.count ?? 0) < 300) {
-    return;
+export async function compactIfNeeded(
+  noteId: string,
+  doc: Y.Doc,
+  updateCount: number,
+): Promise<boolean> {
+  if (updateCount < COMPACTION_THRESHOLD) {
+    return false;
   }
   await snapshot(noteId, doc);
   await query(
     "DELETE FROM note_updates WHERE note_id=$1 AND seq <= (SELECT up_to_seq FROM note_snapshots WHERE note_id=$1 ORDER BY created_at DESC LIMIT 1)",
     [noteId],
   );
+  return true;
 }
 
 export async function createNote(ownerId: string): Promise<NoteRow> {

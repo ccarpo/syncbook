@@ -1,0 +1,156 @@
+import { randomUUID } from "node:crypto";
+import http from "node:http";
+import WebSocket from "ws";
+import { WebsocketProvider } from "y-websocket";
+import * as Y from "yjs";
+import request from "supertest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { tokenFor } from "../src/auth.js";
+import { app, server } from "../src/index.js";
+import { migrate, query } from "../src/db.js";
+import { snapshot } from "../src/store.js";
+
+let ownerToken = "";
+let otherToken = "";
+let ownerNoteId = "";
+let serverPort = 0;
+
+async function createUser(email: string): Promise<{ id: string; token: string }> {
+  const rows = await query<{ id: string }>(
+    "INSERT INTO users(email,password_hash) VALUES($1,$2) RETURNING id",
+    [email, "test-hash"],
+  );
+  return { id: rows[0].id, token: tokenFor(rows[0].id) };
+}
+
+function websocketStatus(url: string): Promise<number | "open"> {
+  return new Promise((resolve) => {
+    const socket = new WebSocket(url);
+    socket.once("open", () => {
+      socket.close();
+      resolve("open");
+    });
+    socket.once("unexpected-response", (_request, response) => {
+      socket.close();
+      resolve(response.statusCode);
+    });
+    socket.once("error", () => resolve(401));
+  });
+}
+
+function setEditorText(doc: Y.Doc, value: string): void {
+  const fragment = doc.getXmlFragment("prosemirror");
+  doc.transact(() => {
+    fragment.delete(0, fragment.length);
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.insert(0, [new Y.XmlText(value)]);
+    fragment.insert(0, [paragraph]);
+  });
+}
+
+function editorText(doc: Y.Doc): string {
+  return doc.getXmlFragment("prosemirror").toString();
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let index = 0; index < 100; index += 1) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("Timed out waiting for condition");
+}
+
+beforeAll(async () => {
+  await migrate();
+  const owner = await createUser(`owner-${randomUUID()}@example.com`);
+  const other = await createUser(`other-${randomUUID()}@example.com`);
+  ownerToken = owner.token;
+  otherToken = other.token;
+  const note = await request(app)
+    .post("/api/notes")
+    .set("Authorization", `Bearer ${ownerToken}`)
+    .expect(201);
+  ownerNoteId = note.body.id as string;
+  await new Promise<void>((resolve) => {
+    server.listen(0, () => resolve());
+  });
+  serverPort = (server.address() as http.AddressInfo).port;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+});
+
+describe("note ownership", () => {
+  it("hides an owner's note from every note-id route", async () => {
+    const routes = [
+      ["delete", `/api/notes/${ownerNoteId}`],
+      ["post", `/api/notes/${ownerNoteId}/restore`],
+      ["get", `/api/notes/${ownerNoteId}/history`],
+      ["get", `/api/notes/${ownerNoteId}/history/${randomUUID()}`],
+      ["post", `/api/notes/${ownerNoteId}/history/${randomUUID()}/restore`],
+    ] as const;
+
+    for (const [method, path] of routes) {
+      await request(app)
+        [method](path)
+        .set("Authorization", `Bearer ${otherToken}`)
+        .expect(404);
+    }
+  });
+});
+
+describe("WebSocket upgrade authentication", () => {
+  it("rejects bad tokens and non-owned notes", async () => {
+    const base = `ws://localhost:${serverPort}/ws/${ownerNoteId}`;
+    await expect(websocketStatus(`${base}?token=bad-token`)).resolves.toBe(401);
+    await expect(
+      websocketStatus(`${base}?token=${encodeURIComponent(otherToken)}`),
+    ).resolves.toBe(401);
+  });
+});
+
+describe("live restore convergence", () => {
+  it("converges two connected clients after an HTTP restore", async () => {
+    const first = new Y.Doc();
+    const second = new Y.Doc();
+    const url = `ws://localhost:${serverPort}/ws`;
+    const options = {
+      WebSocketPolyfill: WebSocket,
+      disableBc: true,
+      params: { token: ownerToken },
+    };
+    const firstProvider = new WebsocketProvider(url, ownerNoteId, first, options);
+    const secondProvider = new WebsocketProvider(url, ownerNoteId, second, options);
+    await waitFor(() => firstProvider.wsconnected && secondProvider.wsconnected);
+
+    setEditorText(first, "first version");
+    await waitFor(() => editorText(second).includes("first version"));
+    await snapshot(ownerNoteId, first);
+
+    setEditorText(first, "second version");
+    await waitFor(() => editorText(second).includes("second version"));
+
+    const history = await request(app)
+      .get(`/api/notes/${ownerNoteId}/history`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(200);
+    const firstSnapshot = history.body.at(-1) as { id: string };
+    await request(app)
+      .post(`/api/notes/${ownerNoteId}/history/${firstSnapshot.id}/restore`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(204);
+
+    await waitFor(
+      () =>
+        editorText(first).includes("first version") &&
+        editorText(second).includes("first version"),
+    );
+    firstProvider.destroy();
+    secondProvider.destroy();
+  });
+});

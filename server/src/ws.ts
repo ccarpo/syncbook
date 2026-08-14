@@ -6,7 +6,14 @@ import * as syncProtocol from "y-protocols/sync";
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
 import { userIdFromToken } from "./auth.js";
-import { appendUpdate, compactIfNeeded, loadDoc, ownedNote, snapshot } from "./store.js";
+import {
+  appendUpdate,
+  compactIfNeeded,
+  COMPACTION_THRESHOLD,
+  loadDoc,
+  ownedNote,
+  snapshot,
+} from "./store.js";
 
 const SYNC = 0;
 const AWARENESS = 1;
@@ -17,6 +24,7 @@ type Room = {
   doc: Y.Doc;
   awareness: awarenessProtocol.Awareness;
   peers: Set<WebSocket>;
+  updatesSinceCompaction: number;
   snapshotTimer?: ReturnType<typeof setTimeout>;
   lastSnapshot: number;
 };
@@ -34,6 +42,7 @@ async function getRoom(noteId: string): Promise<Room> {
     doc,
     awareness: new awarenessProtocol.Awareness(doc),
     peers: new Set(),
+    updatesSinceCompaction: 0,
     lastSnapshot: 0,
   };
   rooms.set(noteId, room);
@@ -89,7 +98,31 @@ export async function restoreAndBroadcast(
   noteId: string,
   snapshotUpdate: Uint8Array,
 ): Promise<void> {
-  const room = await getRoom(noteId);
+  const existing = rooms.get(noteId);
+  if (!existing) {
+    const doc = await loadDoc(noteId);
+    const restored = new Y.Doc();
+    Y.applyUpdate(restored, snapshotUpdate);
+    const currentXml = doc.getXmlFragment("prosemirror");
+    const restoredXml = restored.getXmlFragment("prosemirror");
+    const children = restoredXml
+      .toArray()
+      .filter(
+        (child): child is Y.XmlElement | Y.XmlText =>
+          child instanceof Y.XmlElement || child instanceof Y.XmlText,
+      )
+      .map((child) => child.clone());
+    doc.transact(() => {
+      currentXml.delete(0, currentXml.length);
+      currentXml.insert(0, children);
+    }, "restore");
+    const update = Y.encodeStateAsUpdate(doc);
+    if (update.byteLength > 0) {
+      await appendUpdate(noteId, update, doc);
+    }
+    return;
+  }
+  const room = existing;
   const restored = new Y.Doc();
   Y.applyUpdate(restored, snapshotUpdate);
   const before = Y.encodeStateVector(room.doc);
@@ -163,7 +196,13 @@ export function attachWs(server: Server): void {
           const update = decoding.readVarUint8Array(inspect);
           try {
             await appendUpdate(room.noteId, update, room.doc);
-            await compactIfNeeded(room.noteId, room.doc);
+            room.updatesSinceCompaction += 1;
+            if (
+              room.updatesSinceCompaction >= COMPACTION_THRESHOLD &&
+              (await compactIfNeeded(room.noteId, room.doc, room.updatesSinceCompaction))
+            ) {
+              room.updatesSinceCompaction = 0;
+            }
             scheduleSnapshot(room);
           } catch (error) {
             console.error("Failed to persist update", error);
@@ -172,6 +211,16 @@ export function attachWs(server: Server): void {
         }
       } else if (type === AWARENESS) {
         const update = decoding.readVarUint8Array(decoder);
+        const awarenessDecoder = decoding.createDecoder(update);
+        const awarenessCount = decoding.readVarUint(awarenessDecoder);
+        for (let index = 0; index < awarenessCount; index += 1) {
+          const clientId = decoding.readVarUint(awarenessDecoder);
+          decoding.readVarUint(awarenessDecoder);
+          const state = decoding.readVarString(awarenessDecoder);
+          if (state !== "null") {
+            awarenessClientIds.add(clientId);
+          }
+        }
         awarenessProtocol.applyAwarenessUpdate(room.awareness, update, ws);
         const encoder = encoding.createEncoder();
         encoding.writeVarUint(encoder, AWARENESS);
@@ -180,20 +229,41 @@ export function attachWs(server: Server): void {
       }
     });
 
+    const awarenessClientIds = new Set<number>();
     ws.on("close", () => {
       room.peers.delete(ws);
-      awarenessProtocol.removeAwarenessStates(
-        room.awareness,
-        [room.awareness.clientID],
-        null,
+      const clientIds = [...awarenessClientIds];
+      const clientClocks = clientIds.map(
+        (clientId) => (room.awareness.meta.get(clientId)?.clock ?? 0) + 1,
       );
-      if (room.peers.size === 0) {
-        void snapshot(room.noteId, room.doc).finally(() => {
-          if (room.snapshotTimer) {
-            clearTimeout(room.snapshotTimer);
-          }
-          rooms.delete(room.noteId);
+      awarenessProtocol.removeAwarenessStates(room.awareness, clientIds, null);
+      if (clientIds.length > 0) {
+        const awarenessEncoder = encoding.createEncoder();
+        encoding.writeVarUint(awarenessEncoder, clientIds.length);
+        clientIds.forEach((clientId, index) => {
+          encoding.writeVarUint(awarenessEncoder, clientId);
+          encoding.writeVarUint(awarenessEncoder, clientClocks[index]);
+          encoding.writeVarString(awarenessEncoder, "null");
         });
+        const awarenessUpdate = encoding.toUint8Array(awarenessEncoder);
+        const awarenessMessage = encoding.createEncoder();
+        encoding.writeVarUint(awarenessMessage, AWARENESS);
+        encoding.writeVarUint8Array(awarenessMessage, awarenessUpdate);
+        broadcast(room, encoding.toUint8Array(awarenessMessage));
+      }
+      if (room.peers.size === 0) {
+        void snapshot(room.noteId, room.doc)
+          .catch((error: unknown) => {
+            console.error("Failed to snapshot room", error);
+          })
+          .finally(() => {
+            if (room.snapshotTimer) {
+              clearTimeout(room.snapshotTimer);
+            }
+            if (room.peers.size === 0 && rooms.get(room.noteId) === room) {
+              rooms.delete(room.noteId);
+            }
+          });
       }
     });
   });

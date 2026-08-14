@@ -35,6 +35,27 @@ header button {
   background: none;
   cursor: pointer;
 }
+.list-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.list-actions button,
+.delete-note,
+.restore-note {
+  border: 1px solid #ddd8cf;
+  border-radius: 6px;
+  background: #fff;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+.delete-note {
+  margin-top: 16px;
+  color: #b33;
+}
+.restore-note {
+  margin-top: 6px;
+}
 aside > input {
   width: 100%;
   padding: 10px;
@@ -96,6 +117,10 @@ aside > input {
 .editor ul[data-type="taskList"] {
   list-style: none;
   padding: 0;
+}
+.history-editor {
+  min-height: 20vh;
+  padding: 16px;
 }
 .login {
   display: grid;

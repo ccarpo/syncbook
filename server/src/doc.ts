@@ -10,11 +10,21 @@ export function applyUpdates(state: Uint8Array | null, updates: Uint8Array[]): Y
 
 export function textOf(doc: Y.Doc): string {
   const xml = doc.getXmlFragment("prosemirror");
-  return xml
-    .toString()
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const blocks = xml.toArray().map((child) => textOfNode(child));
+  return blocks.filter(Boolean).join("\n");
+}
+
+function textOfNode(node: Y.XmlElement | Y.XmlText | Y.XmlHook): string {
+  if (node instanceof Y.XmlText) {
+    return node.toString();
+  }
+  if (node instanceof Y.XmlElement) {
+    return node
+      .toArray()
+      .map((child) => textOfNode(child))
+      .join("");
+  }
+  return "";
 }
 
 export function metadata(doc: Y.Doc): { title: string; excerpt: string } {
