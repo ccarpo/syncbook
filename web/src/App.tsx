@@ -27,7 +27,9 @@ export function App(): ReactElement {
   }
   useEffect(() => {
     if (loggedIn) {
-      void api<{ user: User }>("/me").then((result) => setUser(result.user));
+      void api<{ user: User }>("/me")
+        .then((result) => setUser(result.user))
+        .catch(() => setUser(null));
     } else {
       setUser(null);
     }
