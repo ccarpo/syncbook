@@ -16,6 +16,9 @@ import { waitForUserEvents } from "../src/ws.js";
 
 let ownerToken = "";
 let otherToken = "";
+let otherId = "";
+let ownerEmail = "";
+let otherEmail = "";
 let ownerNoteId = "";
 let serverPort = 0;
 
@@ -39,6 +42,21 @@ function websocketStatus(url: string): Promise<number | "open"> {
       resolve(response.statusCode);
     });
     socket.once("error", () => resolve(401));
+  });
+}
+
+function openWebSocket(url: string): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url);
+    socket.once("open", () => resolve(socket));
+    socket.once("error", reject);
+  });
+}
+
+function closeWebSocket(socket: WebSocket): Promise<void> {
+  return new Promise((resolve) => {
+    socket.once("close", () => resolve());
+    socket.close();
   });
 }
 
@@ -69,8 +87,11 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 beforeAll(async () => {
   await migrate();
   await waitForUserEvents();
-  const owner = await createUser(`owner-${randomUUID()}@example.com`);
-  const other = await createUser(`other-${randomUUID()}@example.com`);
+  ownerEmail = `owner-${randomUUID()}@example.com`;
+  otherEmail = `other-${randomUUID()}@example.com`;
+  const owner = await createUser(ownerEmail);
+  const other = await createUser(otherEmail);
+  otherId = other.id;
   ownerToken = owner.token;
   otherToken = other.token;
   const note = await request(app)
@@ -116,6 +137,215 @@ describe("WebSocket upgrade authentication", () => {
     await expect(
       websocketStatus(`${base}?token=${encodeURIComponent(otherToken)}`),
     ).resolves.toBe(401);
+  });
+});
+
+describe("shared note access", () => {
+  it("lists shared notes and permits shared WebSocket access", async () => {
+    await request(app)
+      .post(`/api/notes/${ownerNoteId}/shares`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ email: otherEmail })
+      .expect(200);
+
+    const notes = await request(app)
+      .get("/api/notes")
+      .set("Authorization", `Bearer ${otherToken}`)
+      .expect(200);
+    expect(notes.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: ownerNoteId,
+          owned: false,
+          owner_email: expect.stringContaining("owner-"),
+          tags: [],
+        }),
+      ]),
+    );
+
+    const ownerDoc = new Y.Doc();
+    const sharedDoc = new Y.Doc();
+    const ownerProvider = new WebsocketProvider(
+      `ws://localhost:${serverPort}/ws`,
+      ownerNoteId,
+      ownerDoc,
+      {
+        WebSocketPolyfill: WebSocket,
+        disableBc: true,
+        params: { token: ownerToken },
+      },
+    );
+    const sharedProvider = new WebsocketProvider(
+      `ws://localhost:${serverPort}/ws`,
+      ownerNoteId,
+      sharedDoc,
+      {
+        WebSocketPolyfill: WebSocket,
+        disableBc: true,
+        params: { token: otherToken },
+      },
+    );
+    await waitFor(() => ownerProvider.wsconnected && sharedProvider.wsconnected);
+    setEditorText(ownerDoc, "shared edit");
+    await waitFor(() => editorText(sharedDoc).includes("shared edit"));
+    ownerProvider.destroy();
+    sharedProvider.destroy();
+
+    const unshared = await request(app)
+      .post("/api/notes")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(201);
+    await expect(
+      websocketStatus(
+        `ws://localhost:${serverPort}/ws/${unshared.body.id as string}?token=${encodeURIComponent(otherToken)}`,
+      ),
+    ).resolves.toBe(401);
+  });
+
+  it("keeps destructive and share management routes owner-only", async () => {
+    await expect(
+      request(app)
+        .delete(`/api/notes/${ownerNoteId}`)
+        .set("Authorization", `Bearer ${otherToken}`),
+    ).resolves.toMatchObject({ status: 404 });
+    await expect(
+      request(app)
+        .post(`/api/notes/${ownerNoteId}/restore`)
+        .set("Authorization", `Bearer ${otherToken}`),
+    ).resolves.toMatchObject({ status: 404 });
+    for (const method of ["get", "post"] as const) {
+      await request(app)
+        [method](`/api/notes/${ownerNoteId}/shares`)
+        .set("Authorization", `Bearer ${otherToken}`)
+        .expect(404);
+    }
+    await request(app)
+      .delete(`/api/notes/${ownerNoteId}/shares/${otherId}`)
+      .set("Authorization", `Bearer ${otherToken}`)
+      .expect(404);
+
+    await request(app)
+      .delete(`/api/notes/${ownerNoteId}`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(204);
+    await request(app)
+      .post(`/api/notes/${ownerNoteId}/restore`)
+      .set("Authorization", `Bearer ${otherToken}`)
+      .expect(404);
+    await request(app)
+      .post(`/api/notes/${ownerNoteId}/restore`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(204);
+  });
+});
+
+describe("shared history and tags", () => {
+  it("allows shared history reads and snapshot restores", async () => {
+    const note = await request(app)
+      .post("/api/notes")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(201);
+    const noteId = note.body.id as string;
+    await request(app)
+      .post(`/api/notes/${noteId}/shares`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ email: otherEmail })
+      .expect(200);
+    const doc = new Y.Doc();
+    setEditorText(doc, "shared history");
+    await appendUpdate(noteId, Y.encodeStateAsUpdate(doc), doc);
+    await snapshot(noteId, doc);
+    const history = await request(app)
+      .get(`/api/notes/${noteId}/history`)
+      .set("Authorization", `Bearer ${otherToken}`)
+      .expect(200);
+    const snapshotId = (history.body[0] as { id: string }).id;
+    await request(app)
+      .get(`/api/notes/${noteId}/history/${snapshotId}`)
+      .set("Authorization", `Bearer ${otherToken}`)
+      .expect(200);
+    await request(app)
+      .post(`/api/notes/${noteId}/history/${snapshotId}/restore`)
+      .set("Authorization", `Bearer ${otherToken}`)
+      .expect(204);
+  });
+
+  it("normalizes and validates note tags", async () => {
+    const note = await request(app)
+      .post("/api/notes")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(201);
+    const path = `/api/notes/${note.body.id as string}/tags`;
+    await request(app)
+      .put(path)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ tags: [" Work ", "work", "HOME", ""] })
+      .expect(200)
+      .then((response) => expect(response.body).toEqual({ tags: ["work", "home"] }));
+    await request(app)
+      .put(path)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ tags: ["x".repeat(33)] })
+      .expect(400);
+    await request(app)
+      .put(path)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ tags: Array.from({ length: 17 }, (_, index) => `tag-${index}`) })
+      .expect(400);
+  });
+});
+
+describe("sharing lifecycle", () => {
+  it("handles share edge cases and participant notifications", async () => {
+    const note = await request(app)
+      .post("/api/notes")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(201);
+    const noteId = note.body.id as string;
+    await request(app)
+      .post(`/api/notes/${noteId}/shares`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ email: "missing@example.com" })
+      .expect(404, { error: "No user with that email" });
+    await request(app)
+      .post(`/api/notes/${noteId}/shares`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ email: ownerEmail })
+      .expect(400);
+    const add = await request(app)
+      .post(`/api/notes/${noteId}/shares`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ email: otherEmail })
+      .expect(200);
+    await request(app)
+      .post(`/api/notes/${noteId}/shares`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ email: otherEmail })
+      .expect(200, add.body);
+
+    const socket = await openWebSocket(
+      `ws://localhost:${serverPort}/ws/user?token=${encodeURIComponent(otherToken)}`,
+    );
+    const event = new Promise<{ type: string }>((resolve) => {
+      socket.once("message", (data) => resolve(JSON.parse(data.toString())));
+    });
+    const doc = new Y.Doc();
+    setEditorText(doc, "participant event");
+    await appendUpdate(noteId, Y.encodeStateAsUpdate(doc), doc);
+    await expect(event).resolves.toEqual({ type: "notes-changed" });
+
+    await request(app)
+      .delete(`/api/notes/${noteId}/shares/${otherId}`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(204);
+    await closeWebSocket(socket);
+    const notes = await request(app)
+      .get("/api/notes")
+      .set("Authorization", `Bearer ${otherToken}`)
+      .expect(200);
+    expect(notes.body).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: noteId })]),
+    );
   });
 });
 
