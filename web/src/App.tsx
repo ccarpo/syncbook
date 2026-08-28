@@ -3,7 +3,7 @@ import { api } from "./api";
 import { Editor } from "./Editor";
 import { Login } from "./Login";
 import { NoteList } from "./NoteList";
-import type { Note } from "./types";
+import type { Note, User } from "./types";
 export function App(): ReactElement {
   const [loggedIn, setLoggedIn] = useState(Boolean(localStorage.getItem("token")));
   const [notes, setNotes] = useState<Note[]>([]);
@@ -11,6 +11,7 @@ export function App(): ReactElement {
   const [search, setSearch] = useState("");
   const [trash, setTrash] = useState(false);
   const [error, setError] = useState("");
+  const [user, setUser] = useState<User | null>(null);
   const userSocket = useRef<WebSocket | null>(null);
   const notificationTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   async function load(showTrash = trash): Promise<void> {
@@ -24,6 +25,15 @@ export function App(): ReactElement {
       return;
     }
   }
+  useEffect(() => {
+    if (loggedIn) {
+      void api<{ user: User }>("/me")
+        .then((result) => setUser(result.user))
+        .catch(() => setUser(null));
+    } else {
+      setUser(null);
+    }
+  }, [loggedIn]);
   useEffect(() => {
     if (loggedIn) void load();
   }, [loggedIn, trash]);
@@ -154,10 +164,11 @@ export function App(): ReactElement {
         onRestore={(note) => void restore(note)}
         onLogout={logout}
       />
-      {selected && !trash ? (
+      {selected && !trash && user ? (
         <Editor
           note={selected}
           token={localStorage.getItem("token") ?? ""}
+          user={user}
           onChanged={() => void load()}
         />
       ) : (

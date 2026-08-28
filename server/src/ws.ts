@@ -31,6 +31,7 @@ type Room = {
 };
 
 const rooms = new Map<string, Room>();
+const roomLoads = new Map<string, Promise<Room>>();
 let userEventsReady: Promise<void> = Promise.resolve();
 
 async function getRoom(noteId: string): Promise<Room> {
@@ -38,17 +39,29 @@ async function getRoom(noteId: string): Promise<Room> {
   if (existing) {
     return existing;
   }
-  const doc = await loadDoc(noteId);
-  const room: Room = {
-    noteId,
-    doc,
-    awareness: new awarenessProtocol.Awareness(doc),
-    peers: new Set(),
-    updatesSinceCompaction: 0,
-    lastSnapshot: 0,
-  };
-  rooms.set(noteId, room);
-  return room;
+  const pending = roomLoads.get(noteId);
+  if (pending) {
+    return pending;
+  }
+  const load = (async (): Promise<Room> => {
+    const doc = await loadDoc(noteId);
+    const room: Room = {
+      noteId,
+      doc,
+      awareness: new awarenessProtocol.Awareness(doc),
+      peers: new Set(),
+      updatesSinceCompaction: 0,
+      lastSnapshot: 0,
+    };
+    rooms.set(noteId, room);
+    return room;
+  })();
+  roomLoads.set(noteId, load);
+  try {
+    return await load;
+  } finally {
+    roomLoads.delete(noteId);
+  }
 }
 
 function scheduleSnapshot(room: Room): void {
@@ -208,6 +221,17 @@ export function attachWs(server: Server): void {
     encoding.writeVarUint(encoder, SYNC);
     syncProtocol.writeSyncStep1(encoder, room.doc);
     ws.send(encoding.toUint8Array(encoder));
+    if (room.awareness.getStates().size > 0) {
+      const awarenessEncoder = encoding.createEncoder();
+      encoding.writeVarUint(awarenessEncoder, AWARENESS);
+      encoding.writeVarUint8Array(
+        awarenessEncoder,
+        awarenessProtocol.encodeAwarenessUpdate(room.awareness, [
+          ...room.awareness.getStates().keys(),
+        ]),
+      );
+      ws.send(encoding.toUint8Array(awarenessEncoder));
+    }
 
     ws.on("message", async (data: Buffer) => {
       const bytes = new Uint8Array(data);
