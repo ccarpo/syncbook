@@ -5,6 +5,11 @@ export type Note = {
   updated_at: string;
   deleted_at: string | null;
 };
+export type User = {
+  id: string;
+  email: string;
+  created_at: string;
+};
 export type Snapshot = {
   id: string;
   created_at: string;
