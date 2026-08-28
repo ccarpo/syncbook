@@ -1,5 +1,5 @@
 import { Client, Pool, type PoolClient } from "pg";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { config } from "./config.js";
@@ -59,7 +59,12 @@ export async function subscribeUserEvents(
 }
 export async function migrate(): Promise<void> {
   const here = dirname(fileURLToPath(import.meta.url));
-  const sql = await readFile(resolve(here, "../sql/001_init.sql"), "utf8");
-  await pool.query(sql);
+  const sqlDirectory = resolve(here, "../sql");
+  const files = (await readdir(sqlDirectory))
+    .filter((file) => file.endsWith(".sql"))
+    .sort();
+  for (const file of files) {
+    await pool.query(await readFile(resolve(sqlDirectory, file), "utf8"));
+  }
 }
 export { pool };

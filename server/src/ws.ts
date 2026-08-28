@@ -5,7 +5,7 @@ import * as awarenessProtocol from "y-protocols/awareness";
 import * as syncProtocol from "y-protocols/sync";
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
-import { userIdFromToken } from "./auth.js";
+import { verifiedUserId } from "./auth.js";
 import { subscribeUserEvents } from "./db.js";
 import {
   appendUpdate,
@@ -185,7 +185,7 @@ export function attachWs(server: Server): void {
   });
   server.on("upgrade", async (request: IncomingMessage, socket, head) => {
     const url = new URL(request.url ?? "/", "http://localhost");
-    const userId = userIdFromToken(url.searchParams.get("token") ?? undefined);
+    const userId = await verifiedUserId(url.searchParams.get("token") ?? undefined);
     if (url.pathname === "/ws/user") {
       if (!userId) {
         rejectUpgrade(socket);
