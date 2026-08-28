@@ -1,0 +1,193 @@
+:root {
+  font-family: Inter, system-ui, sans-serif;
+  color: #27262b;
+  background: #f7f6f2;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+.app {
+  display: flex;
+  height: 100vh;
+}
+aside {
+  width: 320px;
+  border-right: 1px solid #ddd8cf;
+  background: #fff;
+  padding: 24px 16px;
+  overflow: auto;
+}
+aside header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+h1 {
+  font-size: 22px;
+  margin: 0 0 20px;
+}
+header button {
+  font-size: 24px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.list-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.list-actions button,
+.delete-note,
+.restore-note {
+  border: 1px solid #ddd8cf;
+  border-radius: 6px;
+  background: #fff;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+.delete-note {
+  margin-top: 16px;
+  color: #b33;
+}
+.restore-note {
+  margin-top: 6px;
+}
+aside > input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd8cf;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.note {
+  display: block;
+  text-align: left;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #eee;
+  background: none;
+  padding: 13px 10px;
+  cursor: pointer;
+}
+.note.active {
+  background: #f0eee9;
+  border-radius: 8px;
+}
+.note b,
+.note small,
+.note time {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note small {
+  color: #777;
+  margin: 4px 0;
+}
+.note time {
+  font-size: 11px;
+  color: #999;
+}
+.editor-pane {
+  flex: 1;
+  padding: 42px 8vw;
+}
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  color: #777;
+  margin-bottom: 20px;
+}
+.editor-header span {
+  font-size: 13px;
+}
+.editor {
+  background: #fff;
+  min-height: 70vh;
+  border-radius: 10px;
+  padding: 32px;
+  outline: none;
+  line-height: 1.65;
+}
+.editor ul[data-type="taskList"] {
+  list-style: none;
+  padding: 0;
+}
+.editor ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.editor ul[data-type="taskList"] li > label {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-top: 4px;
+}
+.editor ul[data-type="taskList"] li > div {
+  flex: 1;
+}
+.history-editor {
+  min-height: 20vh;
+  padding: 16px;
+}
+.login {
+  display: grid;
+  place-items: center;
+  height: 100vh;
+}
+.login form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 320px;
+}
+.login input,
+.login button {
+  padding: 12px;
+  border-radius: 7px;
+  border: 1px solid #ddd8cf;
+  font: inherit;
+}
+.login button {
+  background: #3f5dce;
+  color: white;
+  cursor: pointer;
+}
+.login .link {
+  border: 0;
+  background: none;
+  color: #3f5dce;
+}
+.error {
+  color: #b33;
+}
+.app-error {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  max-width: 360px;
+  padding: 10px 14px;
+  border: 1px solid #d99;
+  border-radius: 6px;
+  background: #fff0f0;
+  color: #922;
+}
+.app-error button {
+  margin-left: 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.empty {
+  margin: auto;
+  color: #777;
+}
