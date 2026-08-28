@@ -37,6 +37,7 @@ header button {
 }
 .list-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -210,6 +211,7 @@ aside > input {
 }
 .password-panel {
   display: flex;
+  flex-basis: 100%;
   flex-wrap: wrap;
   gap: 8px;
   padding: 10px 0;

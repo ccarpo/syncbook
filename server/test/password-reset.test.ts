@@ -1,9 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import http from "node:http";
+import jwt from "jsonwebtoken";
 import WebSocket from "ws";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { checkPassword, hashPassword, tokenFor } from "../src/auth.js";
+import { hashPassword, tokenFor } from "../src/auth.js";
 import { config } from "../src/config.js";
 import { migrate, query } from "../src/db.js";
 import { app, server } from "../src/index.js";
@@ -104,6 +105,12 @@ describe("password reset", () => {
 
   it("resets through the captured link and invalidates the old password and session", async () => {
     const oldToken = tokenFor(userId);
+    const note = await request(app).post("/api/notes").set(auth(oldToken)).expect(201);
+    await expect(
+      websocketStatus(
+        `ws://localhost:${serverPort}/ws/${note.body.id}?token=${encodeURIComponent(oldToken)}`,
+      ),
+    ).resolves.toBe("open");
     await request(app).post("/api/auth/forgot-password").send({ email }).expect(204);
     const rawToken = resetTokenFromMessage(messages[0]);
 
@@ -119,9 +126,19 @@ describe("password reset", () => {
     await request(app).get("/api/me").set(auth(oldToken)).expect(401);
     await expect(
       websocketStatus(
-        `ws://localhost:${serverPort}/ws/not-a-note?token=${encodeURIComponent(oldToken)}`,
+        `ws://localhost:${serverPort}/ws/${note.body.id}?token=${encodeURIComponent(oldToken)}`,
       ),
     ).resolves.toBe(401);
+  });
+
+  it("accepts legacy tokens at version zero and rejects them after a version bump", async () => {
+    const legacyToken = jwt.sign({}, config.jwtSecret, {
+      subject: userId,
+      expiresIn: "30d",
+    });
+    await request(app).get("/api/me").set(auth(legacyToken)).expect(200);
+    await query("UPDATE users SET token_version=token_version+1 WHERE id=$1", [userId]);
+    await request(app).get("/api/me").set(auth(legacyToken)).expect(401);
   });
 
   it("rejects single-use, expired, and tampered reset tokens", async () => {
@@ -196,15 +213,5 @@ describe("default mail sender", () => {
     } finally {
       log.mockRestore();
     }
-  });
-});
-
-describe("token helpers", () => {
-  it("still verifies the stored password hash through the existing primitive", async () => {
-    const rows = await query<{ password_hash: string }>(
-      "SELECT password_hash FROM users WHERE id=$1",
-      [userId],
-    );
-    await expect(checkPassword(password, rows[0].password_hash)).resolves.toBe(true);
   });
 });

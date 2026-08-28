@@ -111,6 +111,8 @@ export function App(): ReactElement {
         token={resetToken}
         onComplete={() => {
           history.replaceState({}, "", location.pathname);
+          localStorage.removeItem("token");
+          setLoggedIn(false);
           setLoginNotice("Your password was reset. You can now log in.");
         }}
       />

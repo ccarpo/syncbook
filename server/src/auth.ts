@@ -21,14 +21,16 @@ export function userIdFromToken(value: string | undefined): string | null {
   }
 }
 export async function verifiedUserId(value: string | undefined): Promise<string | null> {
-  const userId = userIdFromToken(value);
-  if (!userId) {
+  if (!value) {
     return null;
   }
   try {
-    const decoded = jwt.verify(value!, config.jwtSecret);
-    const tokenVersion =
-      typeof decoded === "object" && typeof decoded.tv === "number" ? decoded.tv : 0;
+    const decoded = jwt.verify(value, config.jwtSecret);
+    if (typeof decoded !== "object" || typeof decoded.sub !== "string") {
+      return null;
+    }
+    const userId = decoded.sub;
+    const tokenVersion = typeof decoded.tv === "number" ? decoded.tv : 0;
     const rows = await query<{ token_version: number }>(
       "SELECT token_version FROM users WHERE id=$1",
       [userId],
