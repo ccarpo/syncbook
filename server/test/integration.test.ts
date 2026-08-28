@@ -322,6 +322,10 @@ describe("sharing lifecycle", () => {
       .set("Authorization", `Bearer ${ownerToken}`)
       .send({ email: otherEmail })
       .expect(200, add.body);
+    await request(app)
+      .delete(`/api/notes/${noteId}/shares/not-a-uuid`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(404, { error: "Share not found" });
 
     const socket = await openWebSocket(
       `ws://localhost:${serverPort}/ws/user?token=${encodeURIComponent(otherToken)}`,

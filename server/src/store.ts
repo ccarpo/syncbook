@@ -49,11 +49,11 @@ export async function participants(noteId: string): Promise<string[]> {
   return rows.map((row) => row.user_id);
 }
 
-async function notifyParticipants(
+export async function notifyParticipants(
   noteId: string,
   additional: string[] = [],
 ): Promise<void> {
-  const users = new Set([...((await participants(noteId)) ?? []), ...additional]);
+  const users = new Set([...(await participants(noteId)), ...additional]);
   await Promise.all(
     [...users].map((userId) =>
       notifyUserEvent(userId, "notes-changed").catch((error: unknown) => {
@@ -116,8 +116,6 @@ export async function appendUpdate(
     await notifyParticipants(noteId);
   }
 }
-
-export { notifyParticipants };
 
 export async function snapshot(noteId: string, doc?: Y.Doc): Promise<void> {
   const current = doc ?? (await loadDoc(noteId));

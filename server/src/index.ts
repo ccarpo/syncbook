@@ -298,6 +298,9 @@ app.delete("/api/notes/:id/shares/:userId", async (request, response) => {
   if (!ownerId || !(await ownedNote(request.params.id, ownerId))) {
     return response.status(404).json({ error: "Note not found" });
   }
+  if (!z.string().uuid().safeParse(request.params.userId).success) {
+    return response.status(404).json({ error: "Share not found" });
+  }
   const currentParticipants = await participants(request.params.id);
   const rows = await query(
     "DELETE FROM note_shares WHERE note_id=$1 AND user_id=$2 RETURNING user_id",
