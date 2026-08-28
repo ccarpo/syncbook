@@ -36,7 +36,7 @@ GET /api/me
 200 {"user":{"id":"<uuid>","email":"philipp@example.com","created_at":"<timestamp>"}}
 
 GET /api/notes
-200 [{"id":"<uuid>","title":"First line","excerpt":"First line...","updated_at":"<timestamp>","deleted_at":null}]
+200 [{"id":"<uuid>","title":"First line","excerpt":"First line...","updated_at":"<timestamp>","deleted_at":null,"tags":["work"],"owned":true,"owner_email":"philipp@example.com"}]
 
 GET /api/notes?trash=true
 200 [{"id":"<uuid>","title":"Deleted","excerpt":"...","updated_at":"<timestamp>","deleted_at":"<timestamp>"}]
@@ -51,7 +51,43 @@ POST /api/notes/:id/restore
 204
 ```
 
-Deleted notes are excluded from the default list and are visible with `trash=true`.
+The default note list contains accessible notes owned by the caller or shared
+with the caller. Each row includes sorted `tags`, an `owned` flag, and the
+owner's email. Deleted notes are excluded from the default list. The
+`trash=true` view is owner-only and contains only the owner's deleted notes;
+shared notes disappear from a recipient's list when the owner trashes them.
+
+Tags and sharing:
+
+```http
+PUT /api/notes/:id/tags
+{"tags":[" Work ","work","home"]}
+
+200 {"tags":["home","work"]}
+
+GET /api/notes/:id/shares
+200 [{"user_id":"<uuid>","email":"collaborator@example.com","created_at":"<timestamp>"}]
+
+POST /api/notes/:id/shares
+{"email":"collaborator@example.com"}
+
+200 {"user_id":"<uuid>","email":"collaborator@example.com","created_at":"<timestamp>"}
+
+DELETE /api/notes/:id/shares/:userId
+204
+```
+
+Tags are normalized by trimming and lowercasing, dropping empty values, and
+deduplicating. A note can have at most 16 tags, each no longer than 32
+characters. Tags are note-level content and any participant can edit them.
+Share management is owner-only; adding an unknown email returns 404 and adding
+an existing share is idempotent.
+
+Content access is owner-or-shared: participants can read the note list, open
+live `/ws` sync, read history, preview snapshots, and restore snapshots.
+Trashing, restoring a note from trash, and all share management remain
+owner-only. Content-access failures return 404 without revealing whether a
+note exists.
 
 History:
 
@@ -76,7 +112,8 @@ Connect to:
 GET /ws?noteId=<uuid>&token=<jwt>
 ```
 
-The token is checked during the HTTP upgrade. An invalid, expired, absent, or non-owner token receives:
+The token is checked during the HTTP upgrade. An invalid, expired, absent, or
+non-participant token receives:
 
 ```http
 HTTP/1.1 401 Unauthorized

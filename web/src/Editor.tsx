@@ -39,7 +39,7 @@ export function Editor({
   const [showSharing, setShowSharing] = useState(false);
   const [shares, setShares] = useState<Share[]>([]);
   const [shareEmail, setShareEmail] = useState("");
-  const [shareError, setShareError] = useState("");
+  const [metaError, setMetaError] = useState("");
   const onChangedRef = useRef(onChanged);
   onChangedRef.current = onChanged;
   const ydoc = useMemo(() => new Y.Doc(), [note.id]);
@@ -70,9 +70,10 @@ export function Editor({
     ],
     editorProps: { attributes: { class: "editor" } },
   });
+  const noteTagsKey = note.tags.join("\u0000");
   useEffect(() => {
-    setTags(note.tags);
-  }, [note.id, note.tags]);
+    setTags((current) => (current.join("\u0000") === noteTagsKey ? current : note.tags));
+  }, [note.id, noteTagsKey]);
   useEffect(() => {
     const handleStatus = ({ status: connection }: { status: string }): void =>
       setStatus(connection === "connected" ? "saving" : "offline");
@@ -112,28 +113,36 @@ export function Editor({
       provider.awareness.off("change", updatePresence);
     };
   }, [provider]);
-  async function saveTags(nextTags: string[]): Promise<void> {
-    const result = await api<{ tags: string[] }>(`/notes/${note.id}/tags`, {
-      method: "PUT",
-      body: JSON.stringify({ tags: nextTags }),
-    });
-    setTags(result.tags);
-    onChangedRef.current();
+  async function saveTags(nextTags: string[]): Promise<boolean> {
+    try {
+      const result = await api<{ tags: string[] }>(`/notes/${note.id}/tags`, {
+        method: "PUT",
+        body: JSON.stringify({ tags: nextTags }),
+      });
+      setTags(result.tags);
+      setMetaError("");
+      onChangedRef.current();
+      return true;
+    } catch (cause) {
+      setMetaError(cause instanceof Error ? cause.message : "Unable to update tags");
+      return false;
+    }
   }
   async function commitTagInput(): Promise<void> {
     const next = tagInput.trim();
     if (!next) {
       return;
     }
-    setTagInput("");
-    await saveTags([...tags, ...next.split(",")]);
+    if (await saveTags([...tags, ...next.split(",")])) {
+      setTagInput("");
+    }
   }
   async function loadShares(): Promise<void> {
     try {
       setShares(await api<Share[]>(`/notes/${note.id}/shares`));
-      setShareError("");
+      setMetaError("");
     } catch (cause) {
-      setShareError(cause instanceof Error ? cause.message : "Unable to load shares");
+      setMetaError(cause instanceof Error ? cause.message : "Unable to load shares");
     }
   }
   async function addShare(): Promise<void> {
@@ -146,7 +155,7 @@ export function Editor({
       await loadShares();
       onChangedRef.current();
     } catch (cause) {
-      setShareError(cause instanceof Error ? cause.message : "Unable to add share");
+      setMetaError(cause instanceof Error ? cause.message : "Unable to add share");
     }
   }
   async function removeShare(userId: string): Promise<void> {
@@ -155,7 +164,7 @@ export function Editor({
       await loadShares();
       onChangedRef.current();
     } catch (cause) {
-      setShareError(cause instanceof Error ? cause.message : "Unable to remove share");
+      setMetaError(cause instanceof Error ? cause.message : "Unable to remove share");
     }
   }
   return (
@@ -234,7 +243,7 @@ export function Editor({
               />
               <button onClick={() => void addShare()}>Add</button>
             </div>
-            {shareError && <p className="share-error">{shareError}</p>}
+            {metaError && <p className="share-error">{metaError}</p>}
           </div>
         )}
       </div>
