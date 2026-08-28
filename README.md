@@ -12,6 +12,12 @@ docker compose up --build
 
 The web app is at `http://localhost:8080`, the API is at `http://localhost:3000`, and health is `GET /api/health`. Compose provides the server's in-container `DATABASE_URL`; the localhost value in `.env.example` is for running the server directly on the host.
 
+Password reset mail is configured with `APP_BASE_URL` (default
+`http://localhost:8080`), `SMTP_URL` (default empty), and `MAIL_FROM` (default
+`syncbook@localhost`). Without `SMTP_URL`, reset messages are logged by the
+server, including the reset link, so the default Compose stack works without a
+mail provider. Set `SMTP_URL` to an SMTP connection URL to send real mail.
+
 ## HTTP API
 
 All requests and responses are JSON. Except for registration, login, and health, send:
@@ -30,6 +36,33 @@ POST /api/auth/register
 ```
 
 `POST /api/auth/login` accepts the same request and returns the same response. Failed login always returns `401 {"error":"Invalid email or password"}` without revealing whether an email exists. Invalid registration input returns `400`; duplicate email returns `409`.
+
+Password reset and password changes:
+
+```http
+POST /api/auth/forgot-password
+{"email":"philipp@example.com"}
+
+204
+
+POST /api/auth/reset-password
+{"token":"<raw-reset-token>","password":"new correct horse"}
+
+204
+
+POST /api/auth/change-password
+{"currentPassword":"old password","newPassword":"new correct horse"}
+
+200 {"token":"<jwt>"}
+```
+
+Forgot-password always returns `204`, whether or not the address is
+registered. Reset links expire after one hour and are single-use. A password
+reset or change increments the user's `token_version`, invalidating every
+other session; change-password returns a fresh token so the current session
+continues. Invalid reset links return
+`400 {"error":"Reset link is invalid or has expired"}`. A wrong current
+password returns `400`.
 
 ```http
 GET /api/me

@@ -205,6 +205,24 @@ aside > input {
 .error {
   color: #b33;
 }
+.success {
+  color: #287a45;
+}
+.password-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 0;
+}
+.password-panel input {
+  min-width: 150px;
+  padding: 7px;
+  border: 1px solid #ddd8cf;
+  border-radius: 6px;
+}
+.password-panel button {
+  padding: 7px 9px;
+}
 .app-error {
   position: fixed;
   top: 12px;
