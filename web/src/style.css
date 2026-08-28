@@ -99,9 +99,36 @@ aside > input {
 }
 .editor-header {
   display: flex;
-  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
   color: #777;
   margin-bottom: 20px;
+}
+.editor-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.editor-heading strong {
+  color: #27262b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.editor-actions button,
+.sharing-panel button {
+  border: 1px solid #ddd8cf;
+  border-radius: 6px;
+  background: #fff;
+  padding: 6px 9px;
+  cursor: pointer;
 }
 .editor-header span {
   font-size: 13px;
@@ -143,6 +170,106 @@ aside > input {
   line-height: 1.2;
   white-space: nowrap;
   pointer-events: none;
+}
+.editor-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.tag-editor {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tag-editor > input,
+.share-add input {
+  min-width: 150px;
+  flex: 1;
+  padding: 7px 9px;
+  border: 1px solid #ddd8cf;
+  border-radius: 6px;
+  font: inherit;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #ddd8cf;
+  border-radius: 999px;
+  background: #f0eee9;
+  color: #555;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.tag-chip button {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+}
+.sharing-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #ddd8cf;
+  border-radius: 8px;
+  background: #fff;
+}
+.share-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.share-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.share-person button {
+  padding: 3px 6px;
+  font-size: 12px;
+}
+.share-add {
+  display: flex;
+  gap: 8px;
+}
+.share-error {
+  margin: 0;
+  color: #b33;
+  font-size: 13px;
+}
+.shared-badge {
+  color: #3f5dce;
+  font-size: 12px;
+}
+.note-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 5px 0;
+}
+.note-tags .tag-chip {
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.note-tags .tag-chip.selected {
+  border-color: #3f5dce;
+  color: #3f5dce;
+}
+.tag-filter-clear {
+  margin-bottom: 10px;
+  border: 1px solid #ddd8cf;
+  border-radius: 6px;
+  background: #f0eee9;
+  padding: 6px 9px;
+  cursor: pointer;
 }
 .editor {
   background: #fff;

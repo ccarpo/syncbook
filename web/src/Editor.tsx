@@ -9,7 +9,9 @@ import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { WebsocketProvider } from "y-websocket";
 import { HistoryPanel } from "./HistoryPanel";
+import { api } from "./api";
 import type { Note, User } from "./types";
+type Share = { user_id: string; email: string; created_at: string };
 const CURSOR_COLORS = ["#3f5dce", "#d15b47", "#2f8f6b", "#a35bb8", "#c58a25"];
 function colorForUser(id: string): string {
   let hash = 0;
@@ -32,6 +34,12 @@ export function Editor({
   const [status, setStatus] = useState("connecting");
   const [showHistory, setShowHistory] = useState(false);
   const [presence, setPresence] = useState<Array<{ name: string; color: string }>>([]);
+  const [tags, setTags] = useState(note.tags);
+  const [tagInput, setTagInput] = useState("");
+  const [showSharing, setShowSharing] = useState(false);
+  const [shares, setShares] = useState<Share[]>([]);
+  const [shareEmail, setShareEmail] = useState("");
+  const [shareError, setShareError] = useState("");
   const onChangedRef = useRef(onChanged);
   onChangedRef.current = onChanged;
   const ydoc = useMemo(() => new Y.Doc(), [note.id]);
@@ -62,6 +70,9 @@ export function Editor({
     ],
     editorProps: { attributes: { class: "editor" } },
   });
+  useEffect(() => {
+    setTags(note.tags);
+  }, [note.id, note.tags]);
   useEffect(() => {
     const handleStatus = ({ status: connection }: { status: string }): void =>
       setStatus(connection === "connected" ? "saving" : "offline");
@@ -101,23 +112,131 @@ export function Editor({
       provider.awareness.off("change", updatePresence);
     };
   }, [provider]);
+  async function saveTags(nextTags: string[]): Promise<void> {
+    const result = await api<{ tags: string[] }>(`/notes/${note.id}/tags`, {
+      method: "PUT",
+      body: JSON.stringify({ tags: nextTags }),
+    });
+    setTags(result.tags);
+    onChangedRef.current();
+  }
+  async function commitTagInput(): Promise<void> {
+    const next = tagInput.trim();
+    if (!next) {
+      return;
+    }
+    setTagInput("");
+    await saveTags([...tags, ...next.split(",")]);
+  }
+  async function loadShares(): Promise<void> {
+    try {
+      setShares(await api<Share[]>(`/notes/${note.id}/shares`));
+      setShareError("");
+    } catch (cause) {
+      setShareError(cause instanceof Error ? cause.message : "Unable to load shares");
+    }
+  }
+  async function addShare(): Promise<void> {
+    try {
+      await api<Share>(`/notes/${note.id}/shares`, {
+        method: "POST",
+        body: JSON.stringify({ email: shareEmail }),
+      });
+      setShareEmail("");
+      await loadShares();
+      onChangedRef.current();
+    } catch (cause) {
+      setShareError(cause instanceof Error ? cause.message : "Unable to add share");
+    }
+  }
+  async function removeShare(userId: string): Promise<void> {
+    try {
+      await api(`/notes/${note.id}/shares/${userId}`, { method: "DELETE" });
+      await loadShares();
+      onChangedRef.current();
+    } catch (cause) {
+      setShareError(cause instanceof Error ? cause.message : "Unable to remove share");
+    }
+  }
   return (
     <section className="editor-pane">
       <div className="editor-header">
-        <strong>{note.title || "Untitled note"}</strong>
-        <span>{status}</span>
-        <div className="presence" aria-label="People in this note">
-          {presence.map((person, index) => (
-            <span className="presence-person" key={`${person.name}-${index}`}>
-              <i style={{ backgroundColor: person.color }} />
-              {person.name}
+        <div className="editor-heading">
+          <strong>{note.title || "Untitled note"}</strong>
+          <span>{status}</span>
+          <div className="presence" aria-label="People in this note">
+            {presence.map((person, index) => (
+              <span className="presence-person" key={`${person.name}-${index}`}>
+                <i style={{ backgroundColor: person.color }} />
+                {person.name}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="editor-actions">
+          {note.owned && (
+            <button
+              onClick={() => {
+                setShowSharing((current) => !current);
+                if (!showSharing) void loadShares();
+              }}
+            >
+              Share
+            </button>
+          )}
+          <button onClick={() => editor?.chain().focus().toggleTaskList().run()}>
+            Checklist
+          </button>
+          <button onClick={() => setShowHistory(!showHistory)}>History</button>
+        </div>
+      </div>
+      <div className="editor-meta">
+        <div className="tag-editor" aria-label="Note tags">
+          {tags.map((tag) => (
+            <span className="tag-chip" key={tag}>
+              #{tag}
+              <button
+                aria-label={`Remove tag ${tag}`}
+                onClick={() => void saveTags(tags.filter((current) => current !== tag))}
+              >
+                ×
+              </button>
             </span>
           ))}
+          <input
+            value={tagInput}
+            onChange={(event) => setTagInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === ",") {
+                event.preventDefault();
+                void commitTagInput();
+              }
+            }}
+            placeholder="Add a tag"
+          />
         </div>
-        <button onClick={() => editor?.chain().focus().toggleTaskList().run()}>
-          Checklist
-        </button>
-        <button onClick={() => setShowHistory(!showHistory)}>History</button>
+        {showSharing && note.owned && (
+          <div className="sharing-panel">
+            <div className="share-list">
+              {shares.map((share) => (
+                <span className="share-person" key={share.user_id}>
+                  {share.email}
+                  <button onClick={() => void removeShare(share.user_id)}>Remove</button>
+                </span>
+              ))}
+            </div>
+            <div className="share-add">
+              <input
+                type="email"
+                value={shareEmail}
+                onChange={(event) => setShareEmail(event.target.value)}
+                placeholder="Email to share with"
+              />
+              <button onClick={() => void addShare()}>Add</button>
+            </div>
+            {shareError && <p className="share-error">{shareError}</p>}
+          </div>
+        )}
       </div>
       <EditorContent editor={editor} />
       {showHistory && <HistoryPanel note={note} onRestore={onChanged} />}
