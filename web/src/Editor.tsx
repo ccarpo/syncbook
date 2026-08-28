@@ -45,7 +45,7 @@ export function Editor({
         `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`,
         note.id,
         ydoc,
-        { disableBc: true, params: { token } },
+        { disableBc: true, resyncInterval: 20_000, params: { token } },
       ),
     [note.id, token, ydoc],
   );

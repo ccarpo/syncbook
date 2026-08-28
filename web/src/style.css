@@ -160,6 +160,7 @@ aside > input {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  margin: 4px 0;
 }
 .editor ul[data-type="taskList"] li > label {
   display: inline-flex;
@@ -169,6 +170,12 @@ aside > input {
 }
 .editor ul[data-type="taskList"] li > div {
   flex: 1;
+}
+.editor ul[data-type="taskList"] li > div > p {
+  margin: 0;
+}
+.editor ul[data-type="taskList"] li > label input {
+  margin: 0;
 }
 .history-editor {
   min-height: 20vh;
