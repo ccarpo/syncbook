@@ -243,8 +243,12 @@ export function Editor({
               />
               <button onClick={() => void addShare()}>Add</button>
             </div>
-            {metaError && <p className="share-error">{metaError}</p>}
           </div>
+        )}
+        {metaError && (
+          <p className="share-error" role="alert">
+            {metaError}
+          </p>
         )}
       </div>
       <EditorContent editor={editor} />
