@@ -3,6 +3,9 @@ import http from "node:http";
 import WebSocket from "ws";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
+import * as awarenessProtocol from "y-protocols/awareness";
+import * as decoding from "lib0/decoding";
+import * as encoding from "lib0/encoding";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tokenFor } from "../src/auth.js";
@@ -116,6 +119,75 @@ describe("WebSocket upgrade authentication", () => {
   });
 });
 
+describe("awareness bootstrap", () => {
+  it("sends existing awareness state to a joining peer", async () => {
+    const note = await request(app)
+      .post("/api/notes")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(201);
+    const noteUrl = `ws://localhost:${serverPort}/ws/${note.body.id as string}?token=${encodeURIComponent(ownerToken)}`;
+    const first = new WebSocket(noteUrl);
+    await new Promise<void>((resolve, reject) => {
+      first.once("open", () => resolve());
+      first.once("error", reject);
+    });
+    const firstAwareness = new awarenessProtocol.Awareness(new Y.Doc());
+    firstAwareness.setLocalStateField("user", {
+      name: "first-peer",
+      color: "#3f5dce",
+    });
+    const awarenessUpdate = awarenessProtocol.encodeAwarenessUpdate(firstAwareness, [
+      firstAwareness.clientID,
+    ]);
+    const awarenessMessage = encoding.createEncoder();
+    encoding.writeVarUint(awarenessMessage, 1);
+    encoding.writeVarUint8Array(awarenessMessage, awarenessUpdate);
+    first.send(encoding.toUint8Array(awarenessMessage));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const second = new WebSocket(noteUrl);
+    const received = new Promise<Record<number, Record<string, unknown>>>(
+      (resolve, reject) => {
+        second.on("message", (data) => {
+          const decoder = decoding.createDecoder(new Uint8Array(data as Buffer));
+          if (decoding.readVarUint(decoder) !== 1) {
+            return;
+          }
+          const update = decoding.readVarUint8Array(decoder);
+          const decodedAwareness = new awarenessProtocol.Awareness(new Y.Doc());
+          awarenessProtocol.applyAwarenessUpdate(decodedAwareness, update, null);
+          resolve(
+            Object.fromEntries(
+              [...decodedAwareness.getStates()].map(([clientId, state]) => [
+                clientId,
+                state as Record<string, unknown>,
+              ]),
+            ),
+          );
+        });
+        second.once("error", reject);
+      },
+    );
+    await new Promise<void>((resolve, reject) => {
+      second.once("open", () => resolve());
+      second.once("error", reject);
+    });
+    const states = await received;
+    expect(Object.values(states)).toContainEqual({
+      user: { name: "first-peer", color: "#3f5dce" },
+    });
+    await Promise.all(
+      [first, second].map(
+        (socket) =>
+          new Promise<void>((resolve) => {
+            socket.once("close", () => resolve());
+            socket.close();
+          }),
+      ),
+    );
+  });
+});
+
 describe("user notification channel", () => {
   it("notifies metadata, create, and delete changes without duplicate handlers", async () => {
     const socket = new WebSocket(
@@ -167,12 +239,20 @@ describe("user notification channel", () => {
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(204);
     await expect(deletedEvent).resolves.toEqual({ type: "notes-changed" });
-    socket.close();
+    await new Promise<void>((resolve) => {
+      socket.once("close", () => resolve());
+      socket.close();
+    });
   });
 });
 
 describe("live restore convergence", () => {
   it("converges two connected clients after an HTTP restore", async () => {
+    const note = await request(app)
+      .post("/api/notes")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(201);
+    const liveNoteId = note.body.id as string;
     const first = new Y.Doc();
     const second = new Y.Doc();
     const url = `ws://localhost:${serverPort}/ws`;
@@ -181,24 +261,24 @@ describe("live restore convergence", () => {
       disableBc: true,
       params: { token: ownerToken },
     };
-    const firstProvider = new WebsocketProvider(url, ownerNoteId, first, options);
-    const secondProvider = new WebsocketProvider(url, ownerNoteId, second, options);
+    const firstProvider = new WebsocketProvider(url, liveNoteId, first, options);
+    const secondProvider = new WebsocketProvider(url, liveNoteId, second, options);
     await waitFor(() => firstProvider.wsconnected && secondProvider.wsconnected);
 
     setEditorText(first, "first version");
     await waitFor(() => editorText(second).includes("first version"));
-    await snapshot(ownerNoteId, first);
+    await snapshot(liveNoteId, first);
 
     setEditorText(first, "second version");
     await waitFor(() => editorText(second).includes("second version"));
 
     const history = await request(app)
-      .get(`/api/notes/${ownerNoteId}/history`)
+      .get(`/api/notes/${liveNoteId}/history`)
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(200);
     const firstSnapshot = history.body.at(-1) as { id: string };
     await request(app)
-      .post(`/api/notes/${ownerNoteId}/history/${firstSnapshot.id}/restore`)
+      .post(`/api/notes/${liveNoteId}/history/${firstSnapshot.id}/restore`)
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(204);
 
