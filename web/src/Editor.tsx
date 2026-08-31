@@ -78,6 +78,7 @@ export function Editor({
     const handleStatus = ({ status: connection }: { status: string }): void =>
       setStatus(connection === "connected" ? "saving" : "offline");
     provider.on("status", handleStatus);
+    setStatus(provider.wsconnected ? "saving" : "connecting");
     let timer: ReturnType<typeof setTimeout> | undefined;
     const observer = (): void => {
       if (timer) {
@@ -92,11 +93,15 @@ export function Editor({
       if (timer) {
         clearTimeout(timer);
       }
+    };
+  }, [provider, ydoc]);
+  useEffect(
+    () => () => {
       persistence.destroy();
       provider.destroy();
-      editor?.destroy();
-    };
-  }, [editor, persistence, provider, ydoc]);
+    },
+    [persistence, provider],
+  );
   useEffect(() => {
     const updatePresence = (): void => {
       const others = [...provider.awareness.getStates().entries()]
