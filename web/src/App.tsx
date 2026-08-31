@@ -10,6 +10,7 @@ export function App(): ReactElement {
   const [notes, setNotes] = useState<Note[]>([]);
   const [selected, setSelected] = useState<Note | null>(null);
   const [search, setSearch] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   const [trash, setTrash] = useState(false);
   const [error, setError] = useState("");
   const [user, setUser] = useState<User | null>(null);
@@ -171,6 +172,8 @@ export function App(): ReactElement {
         selected={selected}
         search={search}
         onSearch={setSearch}
+        tagFilter={tagFilter}
+        onTagFilter={setTagFilter}
         onSelect={setSelected}
         onCreate={() => void create()}
         trash={trash}

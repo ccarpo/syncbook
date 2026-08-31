@@ -4,6 +4,9 @@ export type Note = {
   excerpt: string;
   updated_at: string;
   deleted_at: string | null;
+  tags: string[];
+  owned: boolean;
+  owner_email: string;
 };
 export type User = {
   id: string;

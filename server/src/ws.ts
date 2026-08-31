@@ -12,7 +12,7 @@ import {
   compactIfNeeded,
   COMPACTION_THRESHOLD,
   loadDoc,
-  ownedNote,
+  noteAccess,
   snapshot,
 } from "./store.js";
 
@@ -234,7 +234,7 @@ export function attachWs(server: Server): void {
       return;
     }
     const noteId = url.searchParams.get("noteId") ?? url.pathname.replace(/^\/ws\//, "");
-    if (!noteId || !userId || !(await ownedNote(noteId, userId))) {
+    if (!noteId || !userId || (await noteAccess(noteId, userId)) === null) {
       rejectUpgrade(socket);
       return;
     }

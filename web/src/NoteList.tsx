@@ -6,6 +6,8 @@ export function NoteList({
   selected,
   search,
   onSearch,
+  tagFilter,
+  onTagFilter,
   onSelect,
   onCreate,
   trash,
@@ -18,6 +20,8 @@ export function NoteList({
   selected: Note | null;
   search: string;
   onSearch: (value: string) => void;
+  tagFilter: string;
+  onTagFilter: (value: string) => void;
   onSelect: (note: Note) => void;
   onCreate: () => void;
   trash: boolean;
@@ -26,8 +30,12 @@ export function NoteList({
   onRestore: (note: Note) => void;
   onLogout: () => void;
 }): ReactElement {
-  const visible = notes.filter((note) =>
-    `${note.title} ${note.excerpt}`.toLowerCase().includes(search.toLowerCase()),
+  const visible = notes.filter(
+    (note) =>
+      `${note.title} ${note.excerpt} ${note.tags.join(" ")}`
+        .toLowerCase()
+        .includes(search.toLowerCase()) &&
+      (!tagFilter || note.tags.includes(tagFilter)),
   );
   return (
     <aside>
@@ -45,6 +53,11 @@ export function NoteList({
         onChange={(event) => onSearch(event.target.value)}
         placeholder="Search notes"
       />
+      {tagFilter && (
+        <button className="tag-filter-clear" onClick={() => onTagFilter("")}>
+          Clear tag filter: #{tagFilter}
+        </button>
+      )}
       {visible.map((note) => (
         <div
           className={`note ${selected?.id === note.id ? "active" : ""}`}
@@ -54,7 +67,26 @@ export function NoteList({
           tabIndex={0}
         >
           <b>{note.title || "Untitled note"}</b>
+          {!note.owned && (
+            <small className="shared-badge">shared by {note.owner_email}</small>
+          )}
           <small>{note.excerpt || "Empty note"}</small>
+          {note.tags.length > 0 && (
+            <div className="note-tags">
+              {note.tags.map((tag) => (
+                <button
+                  className={`tag-chip ${tag === tagFilter ? "selected" : ""}`}
+                  key={tag}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onTagFilter(tag === tagFilter ? "" : tag);
+                  }}
+                >
+                  #{tag}
+                </button>
+              ))}
+            </div>
+          )}
           <time>{new Date(note.updated_at).toLocaleString()}</time>
           {trash && (
             <button
@@ -69,7 +101,7 @@ export function NoteList({
           )}
         </div>
       ))}
-      {!trash && selected && (
+      {!trash && selected?.owned && (
         <button className="delete-note" onClick={onDelete}>
           Delete selected note
         </button>

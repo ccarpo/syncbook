@@ -10,6 +10,9 @@ export type NoteRow = {
   excerpt: string;
   updated_at: string;
   deleted_at: string | null;
+  tags: string[];
+  owned: boolean;
+  owner_email: string;
 };
 
 export async function ownedNote(noteId: string, userId: string): Promise<boolean> {
@@ -18,6 +21,46 @@ export async function ownedNote(noteId: string, userId: string): Promise<boolean
     userId,
   ]);
   return rows.length > 0;
+}
+
+export async function noteAccess(
+  noteId: string,
+  userId: string,
+): Promise<"owner" | "shared" | null> {
+  const rows = await query<{ access: "owner" | "shared" }>(
+    `SELECT CASE WHEN owner_id=$2 THEN 'owner' ELSE 'shared' END AS access
+     FROM notes
+     WHERE id=$1
+       AND (owner_id=$2 OR EXISTS (
+         SELECT 1 FROM note_shares WHERE note_id=notes.id AND user_id=$2
+       ))`,
+    [noteId, userId],
+  );
+  return rows[0]?.access ?? null;
+}
+
+export async function participants(noteId: string): Promise<string[]> {
+  const rows = await query<{ user_id: string }>(
+    `SELECT owner_id AS user_id FROM notes WHERE id=$1
+     UNION
+     SELECT user_id FROM note_shares WHERE note_id=$1`,
+    [noteId],
+  );
+  return rows.map((row) => row.user_id);
+}
+
+export async function notifyParticipants(
+  noteId: string,
+  additional: string[] = [],
+): Promise<void> {
+  const users = new Set([...(await participants(noteId)), ...additional]);
+  await Promise.all(
+    [...users].map((userId) =>
+      notifyUserEvent(userId, "notes-changed").catch((error: unknown) => {
+        console.error("Failed to publish note event", error);
+      }),
+    ),
+  );
 }
 
 export async function loadDoc(noteId: string): Promise<Y.Doc> {
@@ -43,12 +86,12 @@ export async function appendUpdate(
   doc: Y.Doc,
 ): Promise<void> {
   const noteMetadata = metadata(doc);
-  const ownerId = await tx(async (client) => {
+  const metadataChanged = await tx(async (client) => {
     await client.query('INSERT INTO note_updates(note_id, "update") VALUES($1,$2)', [
       noteId,
       Buffer.from(update),
     ]);
-    const result = await client.query<{ owner_id: string }>(
+    const result = await client.query<{ id: string }>(
       `WITH previous AS (
          SELECT owner_id, title, excerpt
          FROM notes
@@ -58,21 +101,19 @@ export async function appendUpdate(
          UPDATE notes
          SET title=$2, excerpt=$3, updated_at=now()
          WHERE id=$1
-         RETURNING owner_id
+         RETURNING id
        )
-       SELECT updated.owner_id
+       SELECT updated.id
        FROM updated
-       JOIN previous ON previous.owner_id = updated.owner_id
+       CROSS JOIN previous
        WHERE previous.title IS DISTINCT FROM $2
           OR previous.excerpt IS DISTINCT FROM $3`,
       [noteId, noteMetadata.title, noteMetadata.excerpt],
     );
-    return result.rows[0]?.owner_id;
+    return result.rows.length > 0;
   });
-  if (ownerId) {
-    await notifyUserEvent(ownerId, "notes-changed").catch((error: unknown) => {
-      console.error("Failed to publish note event", error);
-    });
+  if (metadataChanged) {
+    await notifyParticipants(noteId);
   }
 }
 
@@ -113,9 +154,17 @@ export async function compactIfNeeded(
 }
 
 export async function createNote(ownerId: string): Promise<NoteRow> {
-  const rows = await query<NoteRow>(
+  const rows = await query<Omit<NoteRow, "tags" | "owned" | "owner_email">>(
     "INSERT INTO notes(owner_id) VALUES($1) RETURNING id,title,excerpt,updated_at,deleted_at",
     [ownerId],
   );
-  return rows[0];
+  const owner = await query<{ email: string }>("SELECT email FROM users WHERE id=$1", [
+    ownerId,
+  ]);
+  return {
+    ...rows[0],
+    tags: [],
+    owned: true,
+    owner_email: owner[0]?.email ?? "",
+  };
 }
