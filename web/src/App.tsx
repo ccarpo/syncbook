@@ -187,6 +187,7 @@ export function App(): ReactElement {
       />
       {selected && !trash && user ? (
         <Editor
+          key={selected.id}
           note={selected}
           token={localStorage.getItem("token") ?? ""}
           user={user}
