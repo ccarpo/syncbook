@@ -4,4 +4,7 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET ?? "development-secret",
   databaseUrl:
     process.env.DATABASE_URL ?? "postgres://syncbook:syncbook@localhost:5432/syncbook",
+  appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:8080",
+  smtpUrl: process.env.SMTP_URL ?? "",
+  mailFrom: process.env.MAIL_FROM ?? "syncbook@localhost",
 };

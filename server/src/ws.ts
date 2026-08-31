@@ -5,7 +5,7 @@ import * as awarenessProtocol from "y-protocols/awareness";
 import * as syncProtocol from "y-protocols/sync";
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
-import { userIdFromToken } from "./auth.js";
+import { verifiedUserId } from "./auth.js";
 import { subscribeUserEvents } from "./db.js";
 import {
   appendUpdate,
@@ -170,9 +170,37 @@ function rejectUpgrade(socket: NodeJS.WritableStream & { destroy(): void }): voi
   socket.destroy();
 }
 
+function heartbeat(ws: WebSocket, intervals: Set<ReturnType<typeof setInterval>>): void {
+  let alive = true;
+  const interval = setInterval(() => {
+    if (!alive) {
+      ws.terminate();
+      return;
+    }
+    alive = false;
+    ws.ping();
+  }, 25_000);
+  intervals.add(interval);
+  const clear = (): void => {
+    clearInterval(interval);
+    intervals.delete(interval);
+  };
+  ws.on("pong", () => {
+    alive = true;
+  });
+  ws.once("close", clear);
+}
+
 export function attachWs(server: Server): void {
   const wss = new WebSocketServer({ noServer: true });
   const userPeers = new Map<string, Set<WebSocket>>();
+  const heartbeatIntervals = new Set<ReturnType<typeof setInterval>>();
+  server.once("close", () => {
+    for (const interval of heartbeatIntervals) {
+      clearInterval(interval);
+    }
+    heartbeatIntervals.clear();
+  });
   userEventsReady = subscribeUserEvents((userId, type) => {
     const message = JSON.stringify({ type });
     for (const peer of userPeers.get(userId) ?? []) {
@@ -185,7 +213,7 @@ export function attachWs(server: Server): void {
   });
   server.on("upgrade", async (request: IncomingMessage, socket, head) => {
     const url = new URL(request.url ?? "/", "http://localhost");
-    const userId = userIdFromToken(url.searchParams.get("token") ?? undefined);
+    const userId = await verifiedUserId(url.searchParams.get("token") ?? undefined);
     if (url.pathname === "/ws/user") {
       if (!userId) {
         rejectUpgrade(socket);
@@ -195,6 +223,7 @@ export function attachWs(server: Server): void {
         const peers = userPeers.get(userId) ?? new Set<WebSocket>();
         peers.add(ws);
         userPeers.set(userId, peers);
+        heartbeat(ws, heartbeatIntervals);
         ws.on("close", () => {
           peers.delete(ws);
           if (peers.size === 0) {
@@ -217,6 +246,7 @@ export function attachWs(server: Server): void {
 
   wss.on("connection", (ws: WebSocket, room: Room) => {
     room.peers.add(ws);
+    heartbeat(ws, heartbeatIntervals);
     const encoder = encoding.createEncoder();
     encoding.writeVarUint(encoder, SYNC);
     syncProtocol.writeSyncStep1(encoder, room.doc);
@@ -280,7 +310,7 @@ export function attachWs(server: Server): void {
         const encoder = encoding.createEncoder();
         encoding.writeVarUint(encoder, AWARENESS);
         encoding.writeVarUint8Array(encoder, update);
-        broadcast(room, encoding.toUint8Array(encoder), ws);
+        broadcast(room, encoding.toUint8Array(encoder));
       }
     });
 

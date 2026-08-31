@@ -354,6 +354,54 @@ describe("sharing lifecycle", () => {
 });
 
 describe("awareness bootstrap", () => {
+  it("echoes awareness updates back to the sending peer", async () => {
+    const note = await request(app)
+      .post("/api/notes")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(201);
+    const noteUrl = `ws://localhost:${serverPort}/ws/${note.body.id as string}?token=${encodeURIComponent(ownerToken)}`;
+    const socket = new WebSocket(noteUrl);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", resolve);
+      socket.once("error", reject);
+    });
+    const awareness = new awarenessProtocol.Awareness(new Y.Doc());
+    awareness.setLocalStateField("user", {
+      name: "sender",
+      color: "#3f5dce",
+    });
+    const received = new Promise<Record<string, unknown>>((resolve, reject) => {
+      socket.on("message", (data) => {
+        const decoder = decoding.createDecoder(new Uint8Array(data as Buffer));
+        if (decoding.readVarUint(decoder) !== 1) {
+          return;
+        }
+        const update = decoding.readVarUint8Array(decoder);
+        const decoded = new awarenessProtocol.Awareness(new Y.Doc());
+        awarenessProtocol.applyAwarenessUpdate(decoded, update, null);
+        const state = decoded.getStates().get(awareness.clientID);
+        if (state) {
+          resolve(state as Record<string, unknown>);
+        }
+      });
+      socket.once("error", reject);
+    });
+    const message = encoding.createEncoder();
+    encoding.writeVarUint(message, 1);
+    encoding.writeVarUint8Array(
+      message,
+      awarenessProtocol.encodeAwarenessUpdate(awareness, [awareness.clientID]),
+    );
+    socket.send(encoding.toUint8Array(message));
+    await expect(received).resolves.toEqual({
+      user: { name: "sender", color: "#3f5dce" },
+    });
+    await new Promise<void>((resolve) => {
+      socket.once("close", resolve);
+      socket.close();
+    });
+  });
+
   it("sends existing awareness state to a joining peer", async () => {
     const note = await request(app)
       .post("/api/notes")

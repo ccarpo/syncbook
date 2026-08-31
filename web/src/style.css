@@ -37,6 +37,7 @@ header button {
 }
 .list-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -287,6 +288,7 @@ aside > input {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  margin: 4px 0;
 }
 .editor ul[data-type="taskList"] li > label {
   display: inline-flex;
@@ -296,6 +298,12 @@ aside > input {
 }
 .editor ul[data-type="taskList"] li > div {
   flex: 1;
+}
+.editor ul[data-type="taskList"] li > div > p {
+  margin: 0;
+}
+.editor ul[data-type="taskList"] li > label input {
+  margin: 0;
 }
 .history-editor {
   min-height: 20vh;
@@ -331,6 +339,25 @@ aside > input {
 }
 .error {
   color: #b33;
+}
+.success {
+  color: #287a45;
+}
+.password-panel {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 0;
+}
+.password-panel input {
+  min-width: 150px;
+  padding: 7px;
+  border: 1px solid #ddd8cf;
+  border-radius: 6px;
+}
+.password-panel button {
+  padding: 7px 9px;
 }
 .app-error {
   position: fixed;
