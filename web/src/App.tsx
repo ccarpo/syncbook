@@ -3,6 +3,7 @@ import { api } from "./api";
 import { Editor } from "./Editor";
 import { Login } from "./Login";
 import { NoteList } from "./NoteList";
+import { ResetPassword } from "./ResetPassword";
 import type { Note, User } from "./types";
 export function App(): ReactElement {
   const [loggedIn, setLoggedIn] = useState(Boolean(localStorage.getItem("token")));
@@ -12,6 +13,7 @@ export function App(): ReactElement {
   const [trash, setTrash] = useState(false);
   const [error, setError] = useState("");
   const [user, setUser] = useState<User | null>(null);
+  const [loginNotice, setLoginNotice] = useState("");
   const userSocket = useRef<WebSocket | null>(null);
   const notificationTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   async function load(showTrash = trash): Promise<void> {
@@ -102,7 +104,23 @@ export function App(): ReactElement {
       }
     };
   }, [loggedIn]);
-  if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
+  const resetToken = new URLSearchParams(location.search).get("reset");
+  if (resetToken) {
+    return (
+      <ResetPassword
+        token={resetToken}
+        onComplete={() => {
+          history.replaceState({}, "", location.pathname);
+          localStorage.removeItem("token");
+          setLoggedIn(false);
+          setLoginNotice("Your password was reset. You can now log in.");
+        }}
+      />
+    );
+  }
+  if (!loggedIn) {
+    return <Login onLogin={() => setLoggedIn(true)} notice={loginNotice} />;
+  }
   async function create(): Promise<void> {
     try {
       const note = await api<Note>("/notes", { method: "POST" });

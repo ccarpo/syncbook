@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import type { Note } from "./types";
+import { ChangePassword } from "./ChangePassword";
 export function NoteList({
   notes,
   selected,
@@ -36,6 +37,7 @@ export function NoteList({
       </header>
       <div className="list-actions">
         <button onClick={onToggleTrash}>{trash ? "Notes" : "Trash"}</button>
+        <ChangePassword />
         <button onClick={onLogout}>Log out</button>
       </div>
       <input
