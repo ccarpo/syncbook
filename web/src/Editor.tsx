@@ -256,8 +256,16 @@ export function Editor({
           </p>
         )}
       </div>
-      <EditorContent editor={editor} />
-      {showHistory && <HistoryPanel note={note} onRestore={onChanged} />}
+      <div hidden={showHistory}>
+        <EditorContent editor={editor} />
+      </div>
+      {showHistory && (
+        <HistoryPanel
+          note={note}
+          onRestore={onChanged}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
     </section>
   );
 }

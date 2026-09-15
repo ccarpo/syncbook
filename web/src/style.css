@@ -306,8 +306,57 @@ aside > input {
   margin: 0;
 }
 .history-editor {
-  min-height: 20vh;
+  min-height: 70vh;
   padding: 16px;
+  background: #f0eee9;
+}
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid #ddd8cf;
+  border-radius: 10px;
+  background: #fff;
+}
+.history h2,
+.history p {
+  margin: 0;
+}
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.history-header button,
+.history-actions button {
+  border: 1px solid #ddd8cf;
+  border-radius: 6px;
+  background: #fff;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.history-caption {
+  min-height: 1.4em;
+  text-align: center;
+}
+.history-slider {
+  width: 100%;
+}
+.history-slider input[type="range"] {
+  width: 100%;
+  accent-color: #3f5dce;
+}
+.history-range-labels {
+  display: flex;
+  justify-content: space-between;
+  color: #777;
+  font-size: 12px;
+}
+.history-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 .login {
   display: grid;
