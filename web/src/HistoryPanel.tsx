@@ -168,7 +168,15 @@ export function HistoryPanel({
     <section className="history">
       <div className="history-header">
         <h2>History</h2>
-        <button onClick={onClose}>Close</button>
+        <div className="history-header-actions">
+          <button
+            disabled={loadingStates || !selectedDoc || restoring}
+            onClick={() => void restore()}
+          >
+            {restoring ? "Restoring…" : "Restore this version"}
+          </button>
+          <button onClick={onClose}>Close</button>
+        </div>
       </div>
       {snapshots.length === 0 ? (
         <p>No history yet</p>
@@ -201,14 +209,6 @@ export function HistoryPanel({
           {selectedDoc && selectedSnapshot && (
             <SnapshotView doc={selectedDoc} key={selectedSnapshot.id} />
           )}
-          <div className="history-actions">
-            <button
-              disabled={loadingStates || !selectedDoc || restoring}
-              onClick={() => void restore()}
-            >
-              {restoring ? "Restoring…" : "Restore this version"}
-            </button>
-          </div>
         </>
       )}
       {error && (

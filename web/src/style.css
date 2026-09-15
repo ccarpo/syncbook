@@ -306,7 +306,9 @@ aside > input {
   margin: 0;
 }
 .history-editor {
-  min-height: 70vh;
+  min-height: 20vh;
+  max-height: 60vh;
+  overflow: auto;
   padding: 16px;
   background: #f0eee9;
 }
@@ -329,8 +331,11 @@ aside > input {
   justify-content: space-between;
   gap: 12px;
 }
-.history-header button,
-.history-actions button {
+.history-header-actions {
+  display: flex;
+  gap: 8px;
+}
+.history-header button {
   border: 1px solid #ddd8cf;
   border-radius: 6px;
   background: #fff;
@@ -353,10 +358,6 @@ aside > input {
   justify-content: space-between;
   color: #777;
   font-size: 12px;
-}
-.history-actions {
-  display: flex;
-  justify-content: flex-end;
 }
 .login {
   display: grid;
