@@ -57,14 +57,25 @@ export async function subscribeUserEvents(
   });
   userEventClient = client;
 }
+const MIGRATION_LOCK_KEY = 7_264_001;
 export async function migrate(): Promise<void> {
   const here = dirname(fileURLToPath(import.meta.url));
   const sqlDirectory = resolve(here, "../sql");
   const files = (await readdir(sqlDirectory))
     .filter((file) => file.endsWith(".sql"))
     .sort();
-  for (const file of files) {
-    await pool.query(await readFile(resolve(sqlDirectory, file), "utf8"));
+  const client = await pool.connect();
+  try {
+    await client.query("SELECT pg_advisory_lock($1)", [MIGRATION_LOCK_KEY]);
+    try {
+      for (const file of files) {
+        await client.query(await readFile(resolve(sqlDirectory, file), "utf8"));
+      }
+    } finally {
+      await client.query("SELECT pg_advisory_unlock($1)", [MIGRATION_LOCK_KEY]);
+    }
+  } finally {
+    client.release();
   }
 }
 export { pool };
