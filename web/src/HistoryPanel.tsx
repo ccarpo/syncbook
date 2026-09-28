@@ -3,7 +3,15 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
+import Link from "@tiptap/extension-link";
+import Image from "@tiptap/extension-image";
+import Table from "@tiptap/extension-table";
+import TableRow from "@tiptap/extension-table-row";
+import TableHeader from "@tiptap/extension-table-header";
+import TableCell from "@tiptap/extension-table-cell";
+import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Collaboration from "@tiptap/extension-collaboration";
+import { lowlight } from "lowlight";
 import * as Y from "yjs";
 import { api } from "./api";
 import type { Note, Snapshot } from "./types";
@@ -17,9 +25,16 @@ function SnapshotView({ doc }: { doc: Y.Doc }): ReactElement {
   const editor = useEditor({
     editable: false,
     extensions: [
-      StarterKit.configure({ history: false }),
+      StarterKit.configure({ history: false, codeBlock: false }),
       TaskList,
       TaskItem.configure({ nested: true }),
+      Link.configure({ openOnClick: false }),
+      Image.configure({ inline: true, allowBase64: true }),
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
       Collaboration.configure({
         document: doc,
         field: "prosemirror",
