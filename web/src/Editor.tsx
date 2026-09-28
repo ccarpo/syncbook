@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
+import type { Editor as TiptapEditor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
+import Link from "@tiptap/extension-link";
+import Image from "@tiptap/extension-image";
+import Table from "@tiptap/extension-table";
+import TableRow from "@tiptap/extension-table-row";
+import TableHeader from "@tiptap/extension-table-header";
+import TableCell from "@tiptap/extension-table-cell";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import * as Y from "yjs";
@@ -62,6 +69,12 @@ export function Editor({
       StarterKit.configure({ history: false }),
       TaskList,
       TaskItem.configure({ nested: true }),
+      Link.configure({ autolink: true, linkOnPaste: true, openOnClick: false }),
+      Image.configure({ inline: false, allowBase64: false }),
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
       Collaboration.configure({ document: ydoc, field: "prosemirror" }),
       CollaborationCursor.configure({
         provider,
@@ -257,6 +270,7 @@ export function Editor({
         )}
       </div>
       <div hidden={showHistory}>
+        {editor && <Toolbar editor={editor} />}
         <EditorContent editor={editor} />
       </div>
       {showHistory && (
@@ -267,5 +281,121 @@ export function Editor({
         />
       )}
     </section>
+  );
+}
+
+function Toolbar({ editor }: { editor: TiptapEditor }): ReactElement {
+  const addLink = (): void => {
+    if (editor.isActive("link")) {
+      editor.chain().focus().unsetLink().run();
+      return;
+    }
+    const url = window.prompt("Enter link URL");
+    if (!url) return;
+    if (editor.state.selection.empty) {
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: "text",
+          text: url,
+          marks: [{ type: "link", attrs: { href: url } }],
+        })
+        .run();
+    } else {
+      editor.chain().focus().setLink({ href: url }).run();
+    }
+  };
+
+  const addImage = (): void => {
+    const src = window.prompt("Enter image URL");
+    if (src) editor.chain().focus().setImage({ src }).run();
+  };
+
+  const insertTable = (): void => {
+    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+  };
+
+  return (
+    <div className="editor-toolbar" aria-label="Formatting">
+      <button
+        type="button"
+        aria-label="Bold"
+        className={editor.isActive("bold") ? "active" : undefined}
+        onClick={() => editor.chain().focus().toggleBold().run()}
+      >
+        B
+      </button>
+      <button
+        type="button"
+        aria-label="Italic"
+        className={editor.isActive("italic") ? "active" : undefined}
+        onClick={() => editor.chain().focus().toggleItalic().run()}
+      >
+        I
+      </button>
+      <button
+        type="button"
+        aria-label="Heading"
+        className={editor.isActive("heading", { level: 2 }) ? "active" : undefined}
+        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+      >
+        H
+      </button>
+      <button
+        type="button"
+        aria-label="Bullet list"
+        className={editor.isActive("bulletList") ? "active" : undefined}
+        onClick={() => editor.chain().focus().toggleBulletList().run()}
+      >
+        •
+      </button>
+      <button
+        type="button"
+        aria-label="Numbered list"
+        className={editor.isActive("orderedList") ? "active" : undefined}
+        onClick={() => editor.chain().focus().toggleOrderedList().run()}
+      >
+        1.
+      </button>
+      <button
+        type="button"
+        aria-label="Quote"
+        className={editor.isActive("blockquote") ? "active" : undefined}
+        onClick={() => editor.chain().focus().toggleBlockquote().run()}
+      >
+        ”
+      </button>
+      <button
+        type="button"
+        aria-label="Inline code"
+        className={editor.isActive("code") ? "active" : undefined}
+        onClick={() => editor.chain().focus().toggleCode().run()}
+      >
+        &lt;/&gt;
+      </button>
+      <button
+        type="button"
+        aria-label="Link"
+        className={editor.isActive("link") ? "active" : undefined}
+        onClick={addLink}
+      >
+        Link
+      </button>
+      <button type="button" aria-label="Image" onClick={addImage}>
+        Img
+      </button>
+      <button type="button" aria-label="Table" onClick={insertTable}>
+        Table
+      </button>
+      <button
+        type="button"
+        aria-label="Checklist"
+        className={editor.isActive("taskList") ? "active" : undefined}
+        onClick={() => editor.chain().focus().toggleTaskList().run()}
+      >
+        Check
+      </button>
+    </div>
   );
 }
