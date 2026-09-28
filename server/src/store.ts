@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 import { notifyUserEvent, query, tx } from "./db.js";
-import { applyUpdates, metadata } from "./doc.js";
+import { applyUpdates, metadata, textOf } from "./doc.js";
 
 export const COMPACTION_THRESHOLD = 300;
 
@@ -86,6 +86,7 @@ export async function appendUpdate(
   doc: Y.Doc,
 ): Promise<void> {
   const noteMetadata = metadata(doc);
+  const text = textOf(doc);
   const metadataChanged = await tx(async (client) => {
     await client.query('INSERT INTO note_updates(note_id, "update") VALUES($1,$2)', [
       noteId,
@@ -93,13 +94,13 @@ export async function appendUpdate(
     ]);
     const result = await client.query<{ id: string }>(
       `WITH previous AS (
-         SELECT owner_id, title, excerpt
+         SELECT owner_id, title, excerpt, content
          FROM notes
          WHERE id=$1
        ),
        updated AS (
          UPDATE notes
-         SET title=$2, excerpt=$3, updated_at=now()
+         SET title=$2, excerpt=$3, content=$4, updated_at=now()
          WHERE id=$1
          RETURNING id
        )
@@ -107,8 +108,9 @@ export async function appendUpdate(
        FROM updated
        CROSS JOIN previous
        WHERE previous.title IS DISTINCT FROM $2
-          OR previous.excerpt IS DISTINCT FROM $3`,
-      [noteId, noteMetadata.title, noteMetadata.excerpt],
+          OR previous.excerpt IS DISTINCT FROM $3
+          OR previous.content IS DISTINCT FROM $4`,
+      [noteId, noteMetadata.title, noteMetadata.excerpt, text],
     );
     return result.rows.length > 0;
   });

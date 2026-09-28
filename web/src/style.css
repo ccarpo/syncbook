@@ -12,18 +12,29 @@ body {
 .app {
   display: flex;
   height: 100vh;
+  overflow: hidden;
 }
 aside {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
   width: 320px;
+  height: 100vh;
   border-right: 1px solid #ddd8cf;
   background: #fff;
   padding: 24px 16px;
-  overflow: auto;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 aside header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.editor-pane {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
 }
 h1 {
   font-size: 22px;
@@ -34,6 +45,54 @@ header button {
   border: 0;
   background: none;
   cursor: pointer;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.burger-menu {
+  position: relative;
+}
+.burger-button {
+  font-size: 22px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.burger-button:hover {
+  background: #f0eee9;
+}
+.burger-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+  padding: 8px;
+  border: 1px solid #ddd8cf;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.burger-dropdown > button,
+.burger-dropdown .password-panel button {
+  font-size: 14px;
+  border: 1px solid #ddd8cf;
+  border-radius: 6px;
+  background: #fff;
+  padding: 6px 9px;
+  cursor: pointer;
+  text-align: left;
+}
+.burger-dropdown > button:hover {
+  background: #f7f6f2;
+}
+.burger-dropdown .password-panel {
+  padding: 0;
 }
 .list-actions {
   display: flex;
@@ -113,7 +172,6 @@ aside > input {
   color: #999;
 }
 .editor-pane {
-  flex: 1;
   padding: 42px 8vw;
 }
 .editor-header {

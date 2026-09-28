@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import type { Note } from "./types";
 import { ChangePassword } from "./ChangePassword";
 export function NoteList({
@@ -30,23 +30,53 @@ export function NoteList({
   onRestore: (note: Note) => void;
   onLogout: () => void;
 }): ReactElement {
-  const visible = notes.filter(
-    (note) =>
-      `${note.title} ${note.excerpt} ${note.tags.join(" ")}`
-        .toLowerCase()
-        .includes(search.toLowerCase()) &&
-      (!tagFilter || note.tags.includes(tagFilter)),
-  );
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClick = (event: MouseEvent): void => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [menuOpen]);
+
+  const visible = notes.filter((note) => !tagFilter || note.tags.includes(tagFilter));
   return (
     <aside>
       <header>
         <h1>Syncbook</h1>
-        <button onClick={onCreate}>＋</button>
+        <div className="header-actions">
+          <button onClick={onCreate}>＋</button>
+          <div className="burger-menu" ref={menuRef}>
+            <button
+              className="burger-button"
+              aria-label="Menu"
+              onClick={() => setMenuOpen((current) => !current)}
+            >
+              ☰
+            </button>
+            {menuOpen && (
+              <div className="burger-dropdown">
+                <ChangePassword />
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onLogout();
+                  }}
+                >
+                  Log out
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </header>
       <div className="list-actions">
         <button onClick={onToggleTrash}>{trash ? "Notes" : "Trash"}</button>
-        <ChangePassword />
-        <button onClick={onLogout}>Log out</button>
       </div>
       <input
         value={search}
