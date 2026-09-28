@@ -512,6 +512,39 @@ function LinkDialog({
   );
 }
 
+function setCodeBlockForSelection(editor: TiptapEditor, language?: string): void {
+  const { state } = editor;
+  const { $from, $to } = state.selection;
+  const range = $from.blockRange($to);
+  if (!range) return;
+
+  if (range.endIndex - range.startIndex === 1) {
+    if (editor.isActive("codeBlock")) {
+      editor
+        .chain()
+        .focus()
+        .updateAttributes("codeBlock", { language: language || null })
+        .run();
+    } else {
+      editor
+        .chain()
+        .focus()
+        .setCodeBlock(language ? { language } : undefined)
+        .run();
+    }
+    return;
+  }
+
+  const text = state.doc.textBetween(range.start, range.end, "\n");
+  const node = state.schema.nodes.codeBlock.create(
+    { language: language || null },
+    state.schema.text(text),
+  );
+  const transaction = state.tr.replaceWith(range.start, range.end, node);
+  editor.view.dispatch(transaction);
+  editor.commands.focus();
+}
+
 function HeadingMenu({ editor }: { editor: TiptapEditor }): ReactElement {
   const level = (editor.getAttributes("heading").level as number | undefined) ?? "";
 
@@ -624,30 +657,25 @@ function CodeBlockControl({ editor }: { editor: TiptapEditor }): ReactElement {
   const language =
     (editor.getAttributes("codeBlock").language as string | undefined) ?? "";
 
-  const setLanguage = (value: string): void => {
-    const next = value || null;
-    if (active) {
-      editor.chain().focus().updateAttributes("codeBlock", { language: next }).run();
-    } else if (value) {
-      editor.chain().focus().setCodeBlock({ language: value }).run();
-    } else {
-      editor.chain().focus().setCodeBlock().run();
-    }
-  };
-
   return (
     <span className="code-block-control" title="Code block language">
       <button
         type="button"
         aria-label="Code block"
         className={active ? "active" : undefined}
-        onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+        onClick={() => {
+          if (active) {
+            editor.chain().focus().toggleCodeBlock().run();
+          } else {
+            setCodeBlockForSelection(editor);
+          }
+        }}
       >
         {"</>"}
       </button>
       <select
         value={language}
-        onChange={(event) => setLanguage(event.target.value)}
+        onChange={(event) => setCodeBlockForSelection(editor, event.target.value)}
         aria-label="Code language"
       >
         {CODE_LANGUAGES.map((option) => (

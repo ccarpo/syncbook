@@ -202,12 +202,24 @@ app.get("/api/notes", async (request, response) => {
     return unauthorized(response);
   }
   const trash = request.query.trash === "true";
+  const search =
+    typeof request.query.search === "string" ? request.query.search.trim() : "";
+  const params: (string | boolean)[] = [userId];
   const condition = trash
     ? "n.owner_id=$1 AND n.deleted_at IS NOT NULL"
     : `(n.deleted_at IS NULL AND (n.owner_id=$1 OR EXISTS (
         SELECT 1 FROM note_shares ns_access
         WHERE ns_access.note_id=n.id AND ns_access.user_id=$1
       )))`;
+  let searchCondition = "";
+  if (search) {
+    const escaped = search
+      .replace(/\\/g, "\\\\")
+      .replace(/%/g, "\\%")
+      .replace(/_/g, "\\_");
+    params.push(`%${escaped}%`);
+    searchCondition = `AND (n.title || ' ' || n.content || ' ' || COALESCE(array_to_string(tags.tags, ' '), '')) ILIKE $${params.length} ESCAPE '\\'`;
+  }
   const notes = await query(
     `SELECT n.id,n.title,n.excerpt,n.updated_at,n.deleted_at,
             COALESCE(tags.tags, ARRAY[]::text[]) AS tags,
@@ -221,8 +233,9 @@ app.get("/api/notes", async (request, response) => {
        GROUP BY note_id
      ) tags ON tags.note_id=n.id
      WHERE ${condition}
+     ${searchCondition}
      ORDER BY n.updated_at DESC`,
-    [userId],
+    params,
   );
   return response.json(notes);
 });

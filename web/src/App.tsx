@@ -17,9 +17,13 @@ export function App(): ReactElement {
   const [loginNotice, setLoginNotice] = useState("");
   const userSocket = useRef<WebSocket | null>(null);
   const notificationTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  async function load(showTrash = trash): Promise<void> {
+  async function load(showTrash = trash, query = search): Promise<void> {
+    const params = new URLSearchParams();
+    if (showTrash) params.set("trash", "true");
+    const trimmed = query.trim();
+    if (trimmed) params.set("search", trimmed);
     try {
-      const list = await api<Note[]>(showTrash ? "/notes?trash=true" : "/notes");
+      const list = await api<Note[]>(`/notes?${params.toString()}`);
       setNotes(list);
       setSelected(
         (current) => list.find((note) => note.id === current?.id) ?? list[0] ?? null,
@@ -38,8 +42,10 @@ export function App(): ReactElement {
     }
   }, [loggedIn]);
   useEffect(() => {
-    if (loggedIn) void load();
-  }, [loggedIn, trash]);
+    if (!loggedIn) return;
+    const timer = setTimeout(() => void load(trash, search), 200);
+    return () => clearTimeout(timer);
+  }, [loggedIn, trash, search]);
   useEffect(() => {
     const showError = (event: Event): void => {
       setError((event as CustomEvent<string>).detail || "Request failed");
