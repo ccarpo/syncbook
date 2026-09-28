@@ -20,6 +20,17 @@ import TableHeader from "@tiptap/extension-table-header";
 import TableCell from "@tiptap/extension-table-cell";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
+import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import { lowlight } from "lowlight";
+import javascript from "highlight.js/lib/languages/javascript";
+import typescript from "highlight.js/lib/languages/typescript";
+import python from "highlight.js/lib/languages/python";
+import xml from "highlight.js/lib/languages/xml";
+import cssLang from "highlight.js/lib/languages/css";
+import sql from "highlight.js/lib/languages/sql";
+import json from "highlight.js/lib/languages/json";
+import bash from "highlight.js/lib/languages/bash";
+import "highlight.js/styles/github.css";
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { WebsocketProvider } from "y-websocket";
@@ -42,6 +53,15 @@ const CODE_LANGUAGES = [
   { label: "JSON", value: "json" },
   { label: "Shell", value: "bash" },
 ];
+
+lowlight.registerLanguage("javascript", javascript);
+lowlight.registerLanguage("typescript", typescript);
+lowlight.registerLanguage("python", python);
+lowlight.registerLanguage("html", xml);
+lowlight.registerLanguage("css", cssLang);
+lowlight.registerLanguage("sql", sql);
+lowlight.registerLanguage("json", json);
+lowlight.registerLanguage("bash", bash);
 
 function colorForUser(id: string): string {
   let hash = 0;
@@ -102,15 +122,16 @@ export function Editor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ history: false }),
+      StarterKit.configure({ history: false, codeBlock: false }),
       TaskList,
       TaskItem.configure({ nested: true }),
       Link.configure({ autolink: true, linkOnPaste: true, openOnClick: false }),
-      Image.configure({ inline: false, allowBase64: true }),
+      Image.configure({ inline: true, allowBase64: true }),
       Table.configure({ resizable: false }),
       TableRow,
       TableHeader,
       TableCell,
+      CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
       Collaboration.configure({ document: ydoc, field: "prosemirror" }),
       CollaborationCursor.configure({
         provider,
@@ -283,22 +304,6 @@ export function Editor({
           </div>
         </div>
         <div className="editor-actions">
-          {note.owned && (
-            <button
-              onClick={() => {
-                setShowSharing((current) => !current);
-                if (!showSharing) void loadShares();
-              }}
-            >
-              Share
-            </button>
-          )}
-          <AddTagChip onAdd={(tag) => void saveTags([...tags, tag])} />
-          <button onClick={() => setShowHistory(!showHistory)}>History</button>
-        </div>
-      </div>
-      <div className="editor-meta">
-        <div className="tag-editor" aria-label="Note tags">
           {tags.map((tag) => (
             <span className="tag-chip" key={tag}>
               #{tag}
@@ -310,34 +315,52 @@ export function Editor({
               </button>
             </span>
           ))}
+          <AddTagChip onAdd={(tag) => void saveTags([...tags, tag])} />
+          {note.owned && (
+            <button
+              onClick={() => {
+                setShowSharing((current) => !current);
+                if (!showSharing) void loadShares();
+              }}
+            >
+              Share
+            </button>
+          )}
+          <button onClick={() => setShowHistory(!showHistory)}>History</button>
         </div>
-        {showSharing && note.owned && (
-          <div className="sharing-panel">
-            <div className="share-list">
-              {shares.map((share) => (
-                <span className="share-person" key={share.user_id}>
-                  {share.email}
-                  <button onClick={() => void removeShare(share.user_id)}>Remove</button>
-                </span>
-              ))}
-            </div>
-            <div className="share-add">
-              <input
-                type="email"
-                value={shareEmail}
-                onChange={(event) => setShareEmail(event.target.value)}
-                placeholder="Email to share with"
-              />
-              <button onClick={() => void addShare()}>Add</button>
-            </div>
-          </div>
-        )}
-        {metaError && (
-          <p className="share-error" role="alert">
-            {metaError}
-          </p>
-        )}
       </div>
+      {(metaError || (showSharing && note.owned)) && (
+        <div className="editor-meta">
+          {showSharing && note.owned && (
+            <div className="sharing-panel">
+              <div className="share-list">
+                {shares.map((share) => (
+                  <span className="share-person" key={share.user_id}>
+                    {share.email}
+                    <button onClick={() => void removeShare(share.user_id)}>
+                      Remove
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="share-add">
+                <input
+                  type="email"
+                  value={shareEmail}
+                  onChange={(event) => setShareEmail(event.target.value)}
+                  placeholder="Email to share with"
+                />
+                <button onClick={() => void addShare()}>Add</button>
+              </div>
+            </div>
+          )}
+          {metaError && (
+            <p className="share-error" role="alert">
+              {metaError}
+            </p>
+          )}
+        </div>
+      )}
       <div hidden={showHistory}>
         {editor && <Toolbar editor={editor} />}
         <EditorContent editor={editor} />
@@ -489,6 +512,37 @@ function LinkDialog({
   );
 }
 
+function HeadingMenu({ editor }: { editor: TiptapEditor }): ReactElement {
+  const level = (editor.getAttributes("heading").level as number | undefined) ?? "";
+
+  const onChange = (value: string): void => {
+    if (value === "") {
+      editor.chain().focus().setParagraph().run();
+    } else {
+      editor
+        .chain()
+        .focus()
+        .toggleHeading({ level: Number(value) as 1 | 2 | 3 | 4 | 5 | 6 })
+        .run();
+    }
+  };
+
+  return (
+    <select
+      className="heading-menu"
+      value={level}
+      onChange={(event) => onChange(event.target.value)}
+      aria-label="Heading"
+    >
+      <option value="">Paragraph</option>
+      <option value={1}>Heading 1</option>
+      <option value={2}>Heading 2</option>
+      <option value={3}>Heading 3</option>
+      <option value={4}>Heading 4</option>
+    </select>
+  );
+}
+
 function TableMenu({ editor }: { editor: TiptapEditor }): ReactElement {
   const [key, setKey] = useState(0);
   const active = editor.isActive("table");
@@ -636,14 +690,7 @@ function Toolbar({ editor }: { editor: TiptapEditor }): ReactElement {
       >
         I
       </button>
-      <button
-        type="button"
-        aria-label="Heading"
-        className={editor.isActive("heading", { level: 2 }) ? "active" : undefined}
-        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-      >
-        H
-      </button>
+      <HeadingMenu editor={editor} />
       <button
         type="button"
         aria-label="Bullet list"
